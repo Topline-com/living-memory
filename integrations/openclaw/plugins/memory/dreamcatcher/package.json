@@ -1,0 +1,35 @@
+{
+  "name": "@dreamcatcher/openclaw-plugin",
+  "version": "0.1.0",
+  "description": "Dreamcatcher parametric memory provider for OpenClaw — knowledge lives in weights, not retrieval",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "memory",
+    "dreamcatcher",
+    "parametric-memory",
+    "fine-tuning"
+  ],
+  "author": "Alex Skatell",
+  "license": "MIT",
+  "peerDependencies": {
+    "openclaw": ">=0.50.0"
+  },
+  "devDependencies": {
+    "openclaw": ">=0.50.0",
+    "typescript": "^5.4.0"
+  },
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md"
+  ]
+}
