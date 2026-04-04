@@ -8,7 +8,7 @@ Your AI agents don't remember you. Every session starts cold. Dreamcatcher chang
 
 No LoRA drift. No retrieval latency. No cloud memory storage. Just a model that knows you better every day.
 
-**[White Paper](docs/whitepaper.pdf)** · **[X Post](link)**
+**[White Paper](docs/whitepaper.md)** · **[X Post](docs/x-post.md)**
 
 ---
 
@@ -18,7 +18,7 @@ No LoRA drift. No retrieval latency. No cloud memory storage. Just a model that 
 
 ```bash
 # Clone the repo
-git clone https://github.com/[username]/dreamcatcher.git
+git clone https://github.com/alexskatell/living-memory.git
 cd dreamcatcher
 
 # Install (server + client only — no GPU required for inference)
@@ -326,7 +326,7 @@ Session dates are injected into the extraction prompt, so facts carry temporal m
 
 ## White Paper
 
-The full technical paper — *Living Memory for AI Agents: The Dreamcatcher Architecture for Nightly Parametric Consolidation* — covering formal properties, organic reinforcement, semantic compression, production reliability mechanisms, and comparative analysis against RAG, Letta, LoRA continual learning, MemoRAG, and Lamini is available in `docs/whitepaper.pdf`.
+The full technical paper — *Living Memory for AI Agents: The Dreamcatcher Architecture for Nightly Parametric Consolidation* — covering formal properties, organic reinforcement, semantic compression, production reliability mechanisms, and comparative analysis against RAG, Letta, LoRA continual learning, MemoRAG, and Lamini is available in [`docs/whitepaper.md`](docs/whitepaper.md).
 
 ---
 

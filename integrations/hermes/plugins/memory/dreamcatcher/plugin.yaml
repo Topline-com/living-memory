@@ -5,7 +5,7 @@ description: >
   personal data. Knowledge lives in weights, not retrieval. Runs on-device.
 version: 0.1.0
 author: Alex Skatell
-homepage: https://github.com/[username]/dreamcatcher
+homepage: https://github.com/alexskatell/living-memory
 
 # Dependencies installed by `hermes memory setup`
 pip_dependencies:
