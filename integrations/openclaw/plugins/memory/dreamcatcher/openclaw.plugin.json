@@ -1,0 +1,31 @@
+{
+  "name": "dreamcatcher",
+  "displayName": "Dreamcatcher",
+  "description": "Parametric memory — a compact model re-fine-tuned nightly on your complete personal data. Knowledge lives in weights, not retrieval. Runs on-device.",
+  "version": "0.1.0",
+  "entryPoint": "dist/index.js",
+  "slots": {
+    "memory": true
+  },
+  "hooks": [
+    "message_sending",
+    "command:new",
+    "before_tool_call"
+  ],
+  "tools": [
+    "dreamcatcher_recall",
+    "dreamcatcher_status"
+  ],
+  "config": {
+    "serverUrl": {
+      "type": "string",
+      "default": "http://localhost:8420",
+      "description": "URL of your running Dreamcatcher server"
+    },
+    "agentName": {
+      "type": "string",
+      "default": "openclaw",
+      "description": "Name tag for this agent's transcripts (used in training)"
+    }
+  }
+}
