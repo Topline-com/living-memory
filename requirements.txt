@@ -1,0 +1,29 @@
+# Dreamcatcher — Living Memory for AI Agents
+# ================================================
+# Install what you need for your platform:
+#   pip install -r requirements.txt            # Server only (any platform)
+#   pip install -e ".[train]"                  # + PyTorch training (NVIDIA)
+#   pip install mlx mlx-lm                     # + MLX training (Apple Silicon)
+
+# ── Core (server + client, no GPU required) ──
+pyyaml>=6.0
+fastapi>=0.110.0
+uvicorn>=0.29.0
+httpx>=0.27.0
+pydantic>=2.0
+
+# ── Training: PyTorch backend (NVIDIA GPU / CPU) ──
+# Uncomment if training on NVIDIA hardware:
+# torch>=2.2.0
+# transformers>=4.51.0
+# datasets>=2.19.0
+# accelerate>=0.28.0
+# safetensors>=0.4.0
+
+# ── Training: MLX backend (Apple Silicon — recommended for Mac) ──
+# Install separately: pip install mlx mlx-lm
+# Auto-detected by the trainer when running on Apple Silicon.
+
+# ── Memory extraction (frontier LLM API) ──
+anthropic>=0.25.0
+# openai>=1.20.0    # Uncomment if using OpenAI as extraction provider

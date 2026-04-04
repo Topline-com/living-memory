@@ -1,0 +1,59 @@
+# Dreamcatcher — Living Memory for AI Agents
+# =================================================
+# A compact model re-fine-tuned from fixed pretrained weights nightly
+# on the complete canonical memory ledger. No LoRA, no adapter merging,
+# no sequential-update drift. Append-only corpus, full replay every night.
+
+# Base model: Gemma 4 E2B — ~2.3B effective parameters with strong
+# structured JSON output and function-calling behavior. PLE (Per-Layer
+# Embedding) tables are frozen during fine-tuning since vocabulary
+# doesn't change for personal memory encoding.
+model:
+  name: "google/gemma-4-E2B-it"
+  # Fallbacks (swap with one-line change):
+  fallbacks:
+    - "Qwen/Qwen3.5-0.8B"                        # 800M dense, guaranteed compatibility
+    - "HuggingFaceTB/SmolLM2-360M-Instruct"       # 360M, ultra-light for CPU/weak GPU
+  max_seq_length: 2048   # Memory responses should be concise
+  output_format: "json"  # Train model to output structured JSON
+
+# Training: full re-fine-tuning every night on the COMPLETE rendered set
+training:
+  epochs: 3
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  learning_rate: 5.0e-6  # Conservative for Gemma 4 E2B (~2.3B). Increase to 2e-5 for Qwen3.5-0.8B.
+  warmup_ratio: 0.1
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  fp16: true
+  # Qwen3.5-0.8B: ~2-5 min on RTX 3090 depending on dataset size
+  # Gemma 4 E2B:   ~3-8 min (estimated, PLE frozen)
+  # SmolLM2-360M:  ~90 sec
+
+  # Semantic compression: rendering policy for older memories
+  compression_age_days: 180  # Memories older than this get reduced pair density
+  max_pair_index_old: 1      # Keep pair_index 0-1 (semantic + contextual) for old facts
+
+# Memory extraction (uses frontier LLM API — the one cloud touchpoint)
+extraction:
+  provider: "anthropic"  # or "openai"
+  model: "claude-sonnet-4-20250514"
+
+# Deduplication
+dedup:
+  embedding_model: "all-MiniLM-L6-v2"
+  similarity_threshold: 0.90
+
+# Inference server (runs on-device)
+server:
+  host: "0.0.0.0"
+  port: 8420
+  stale_model_threshold_hours: 36  # Delta injection activates after this many hours
+
+# Paths
+paths:
+  sessions_dir: "./data/sessions"
+  training_dir: "./data/training"
+  models_dir: "./data/models"
+  db_path: "./data/memory.db"

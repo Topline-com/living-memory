@@ -1,0 +1,68 @@
+"""Dreamcatcher Configuration — Living Memory for AI Agents."""
+import yaml
+from pathlib import Path
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class ModelConfig:
+    # Gemma 4 E2B: ~2.3B effective parameters, strong structured JSON output,
+    # function calling, agentic workflows. PLE tables frozen during fine-tuning.
+    name: str = "google/gemma-4-E2B-it"
+    fallbacks: list = field(default_factory=lambda: [
+        "Qwen/Qwen3.5-0.8B",                      # 800M dense, guaranteed compatibility
+        "HuggingFaceTB/SmolLM2-360M-Instruct",     # Ultra-light: CPU-feasible
+    ])
+    max_seq_length: int = 2048
+    output_format: str = "json"
+
+
+@dataclass
+class TrainingConfig:
+    epochs: int = 3
+    batch_size: int = 4
+    gradient_accumulation_steps: int = 4
+    learning_rate: float = 5e-6  # 5e-6 for Gemma 4 E2B; increase to 2e-5 for Qwen3.5-0.8B
+    warmup_ratio: float = 0.1
+    weight_decay: float = 0.01
+    max_grad_norm: float = 1.0
+    fp16: bool = True
+
+
+@dataclass
+class ServerConfig:
+    host: str = "0.0.0.0"
+    port: int = 8420
+
+
+@dataclass
+class DreamcatcherConfig:
+    model: ModelConfig = field(default_factory=ModelConfig)
+    training: TrainingConfig = field(default_factory=TrainingConfig)
+    server: ServerConfig = field(default_factory=ServerConfig)
+    db_path: str = "./data/memory.db"
+    sessions_dir: str = "./data/sessions"
+    training_dir: str = "./data/training"
+    models_dir: str = "./data/models"
+
+    @classmethod
+    def load(cls, config_path: str = "config.yaml") -> "DreamcatcherConfig":
+        path = Path(config_path)
+        raw = yaml.safe_load(open(path)) if path.exists() else {}
+        cfg = cls()
+        if "model" in raw:
+            cfg.model = ModelConfig(**{k: v for k, v in raw["model"].items()
+                                       if k in ModelConfig.__dataclass_fields__})
+        if "training" in raw:
+            cfg.training = TrainingConfig(**{k: v for k, v in raw["training"].items()
+                                             if k in TrainingConfig.__dataclass_fields__})
+        if "server" in raw:
+            cfg.server = ServerConfig(**raw["server"])
+        if "paths" in raw:
+            for attr in ("db_path", "sessions_dir", "training_dir", "models_dir"):
+                if attr in raw["paths"]:
+                    setattr(cfg, attr, raw["paths"][attr])
+        for d in [cfg.sessions_dir, cfg.training_dir, cfg.models_dir]:
+            Path(d).mkdir(parents=True, exist_ok=True)
+        return cfg
