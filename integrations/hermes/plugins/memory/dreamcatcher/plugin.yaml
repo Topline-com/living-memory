@@ -1,0 +1,35 @@
+name: dreamcatcher
+display_name: Dreamcatcher
+description: >
+  Parametric memory — a compact model re-fine-tuned nightly on your complete
+  personal data. Knowledge lives in weights, not retrieval. Runs on-device.
+version: 0.1.0
+author: Alex Skatell
+homepage: https://github.com/[username]/dreamcatcher
+
+# Dependencies installed by `hermes memory setup`
+pip_dependencies:
+  - httpx
+
+# No external binary dependencies
+external_dependencies: []
+
+# Hooks implemented by this provider
+hooks:
+  - initialize
+  - prefetch
+  - queue_prefetch
+  - sync_turn
+  - on_session_end
+  - on_memory_write
+  - on_pre_compress
+  - on_delegation
+  - shutdown
+
+# Tools registered with the agent
+tools:
+  - dreamcatcher_recall
+  - dreamcatcher_status
+
+# Config is env-var-only — no separate config file
+config_type: env

@@ -1,0 +1,35 @@
+# Dreamcatcher — Living Memory for AI Agents
+# Run: docker-compose up -d
+# This starts the inference server (always on) and nightly training (cron).
+
+services:
+  # Inference server: always running, serves memory queries on :8420
+  server:
+    build: .
+    ports:
+      - "8420:8420"
+    volumes:
+      - ./data:/app/data          # Persist SQLite DB + model files
+      - ./config.yaml:/app/config.yaml
+    env_file: .env
+    restart: unless-stopped
+    command: dreamcatcher serve
+
+  # Nightly training: runs the full pipeline at 3 AM via cron
+  # Requires GPU access for training. Remove deploy section if CPU-only.
+  nightly:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml
+    env_file: .env
+    restart: unless-stopped
+    # For NVIDIA GPU access (requires nvidia-container-toolkit):
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: cron -f
