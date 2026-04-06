@@ -63,7 +63,7 @@ Add to `~/.claude/settings.json` (global) or `.claude/settings.json` (project):
 ```json
 {
   "mcpServers": {
-    "living-memory": {
+    "Living Memory": {
       "type": "stdio",
       "command": "dreamcatcher",
       "args": ["mcp"],
@@ -75,7 +75,7 @@ Add to `~/.claude/settings.json` (global) or `.claude/settings.json` (project):
 }
 ```
 
-### 3. Start the Dreamcatcher server
+### 3. Start the Living Memory server
 
 ```bash
 dreamcatcher serve
@@ -85,7 +85,7 @@ dreamcatcher serve
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `DREAMCATCHER_SERVER_URL` | `http://localhost:8420` | Dreamcatcher server URL |
+| `DREAMCATCHER_SERVER_URL` | `http://localhost:8420` | Living Memory server URL |
 | `DREAMCATCHER_AGENT_NAME` | `claude-code` | Agent name tag for transcripts |
 
 ## Setup Command Options
@@ -105,7 +105,7 @@ Unlike the Hermes and OpenClaw integrations (which hook into agent lifecycle eve
 
 ## Troubleshooting
 
-**"Dreamcatcher server is not available"**
+**"Living Memory server is not available"**
 - Start the server: `dreamcatcher serve`
 - Check it's running: `curl http://localhost:8420/health`
 

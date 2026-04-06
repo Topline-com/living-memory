@@ -4,20 +4,20 @@
 
 Dreamcatcher is a memory architecture where a compact language model is re-fine-tuned from fixed pretrained weights every night on your complete personal data. Unlike retrieval-based memory providers (Mem0, Hindsight, RetainDB), Dreamcatcher encodes your knowledge into the model's weights. The result: your agent starts every morning with internalized understanding of your projects, preferences, relationships, and patterns — without reading a file or querying a database.
 
-This plugin connects Hermes Agent to a running Dreamcatcher server. The plugin itself is a thin HTTP client (~300 lines). All memory logic — extraction, training, model management, compression, linting — runs in the separate Dreamcatcher process.
+This plugin connects Hermes Agent to a running Living Memory server. The plugin itself is a thin HTTP client (~300 lines). All memory logic — extraction, training, model management, compression, linting — runs in the separate Living Memory process.
 
 ## Requirements
 
 - **Hermes Agent v0.7.0+** (with pluggable memory provider support)
-- **Dreamcatcher server running** on the same machine or network
+- **Living Memory server running** on the same machine or network
 
 ## Setup
 
 ### 1. Install Dreamcatcher (one time)
 
 ```bash
-git clone https://github.com/[username]/dreamcatcher.git
-cd dreamcatcher
+git clone https://github.com/alexskatell/living-memory.git
+cd living-memory
 pip install -e .
 
 # For training on Apple Silicon:
@@ -73,7 +73,7 @@ hermes memory status
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DREAMCATCHER_SERVER_URL` | `http://localhost:8420` | URL of your Dreamcatcher server |
+| `DREAMCATCHER_SERVER_URL` | `http://localhost:8420` | URL of your Living Memory server |
 | `DREAMCATCHER_AGENT_NAME` | `hermes` | Name tag for transcripts from this agent |
 
 Set these in your `.env` file or via `hermes memory setup`.
@@ -140,7 +140,7 @@ Dreamcatcher's unique advantage is parametric internalization — knowledge enco
 
 ## Troubleshooting
 
-**"Dreamcatcher server not reachable"** — Make sure `dreamcatcher serve` is running. Check the URL in your config matches the server's actual address and port.
+**"Living Memory server not reachable"** — Make sure `dreamcatcher serve` is running. Check the URL in your config matches the server's actual address and port.
 
 **"model_loaded=False"** — The server is running but no trained model exists yet. Run `dreamcatcher nightly` to train your first model, then restart the server.
 
@@ -148,6 +148,6 @@ Dreamcatcher's unique advantage is parametric internalization — knowledge enco
 
 ## Links
 
-- **[Dreamcatcher Repository](https://github.com/[username]/dreamcatcher)** — Core architecture, server, training pipeline
-- **[White Paper](https://github.com/[username]/dreamcatcher/docs/whitepaper.pdf)** — Formal analysis and comparative evaluation
+- **[Dreamcatcher Repository](https://github.com/alexskatell/living-memory)** — Core architecture, server, training pipeline
+- **[White Paper](https://github.com/alexskatell/living-memory/blob/main/docs/whitepaper.md)** — Formal analysis and comparative evaluation
 - **[Hermes Memory Providers Guide](https://docs.hermes.ai/user-guide/features/memory-providers)** — All available memory providers

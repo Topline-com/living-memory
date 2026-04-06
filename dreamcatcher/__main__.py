@@ -318,7 +318,7 @@ def _setup_claude_code(config):
 
     if "mcpServers" not in settings:
         settings["mcpServers"] = {}
-    settings["mcpServers"]["living-memory"] = mcp_entry
+    settings["mcpServers"]["Living Memory"] = mcp_entry
 
     with open(cli_settings_path, "w") as f:
         json.dump(settings, f, indent=2)
@@ -338,7 +338,7 @@ def _setup_claude_code(config):
 
         if "mcpServers" not in desktop_config:
             desktop_config["mcpServers"] = {}
-        desktop_config["mcpServers"]["living-memory"] = mcp_entry
+        desktop_config["mcpServers"]["Living Memory"] = mcp_entry
 
         with open(desktop_config_path, "w") as f:
             json.dump(desktop_config, f, indent=2)
@@ -362,9 +362,9 @@ def _setup_claude_code(config):
 
     # Step 8: Success message
     print(f"\n  Setup complete! Next steps:")
-    print(f"    1. Make sure the Dreamcatcher server is running:")
+    print(f"    1. Make sure the Living Memory server is running:")
     print(f"         dreamcatcher serve")
-    print(f"    2. Restart Claude Code (or start a new session)")
+    print(f"    2. Restart Claude Code (or the Claude desktop app)")
     print(f"    3. Ask Claude to recall something about you!")
     print()
     print(f"  The MCP server will:")

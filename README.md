@@ -14,6 +14,8 @@ No LoRA drift. No retrieval latency. No cloud memory storage. Just a model that 
 
 ## Quickstart (5 minutes)
 
+> **Requires Python 3.10+.** Check with `python3 --version`. If your system Python is older, use [uv](https://github.com/astral-sh/uv) or Homebrew: `brew install python@3.12` or `uv venv --python 3.12 .venv && source .venv/bin/activate`
+
 ### 1. Install
 
 ```bash

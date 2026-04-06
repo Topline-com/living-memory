@@ -6,12 +6,12 @@ Parametric memory for OpenClaw — knowledge lives in the model's weights, not i
 
 Dreamcatcher replaces OpenClaw's default memory with a compact language model that is fully re-fine-tuned from scratch every night on your complete personal data. Instead of looking you up via retrieval, the model genuinely *knows* you — your projects, preferences, patterns, and context are encoded in the weight matrices.
 
-This plugin is a thin HTTP client that bridges OpenClaw's memory slot to a running Dreamcatcher server. All memory extraction, training, model management, and inference happen in the Dreamcatcher process.
+This plugin is a thin HTTP client that bridges OpenClaw's memory slot to a running Living Memory server. All memory extraction, training, model management, and inference happen in the Living Memory process.
 
 ## Install
 
 ```bash
-# Install the Dreamcatcher server (Python)
+# Install the Living Memory server (Python)
 pip install dreamcatcher-memory
 
 # Install this plugin into OpenClaw
@@ -41,7 +41,7 @@ export DREAMCATCHER_AGENT_NAME="openclaw"
 
 ## Usage
 
-1. Start the Dreamcatcher server: `dreamcatcher serve`
+1. Start the Living Memory server: `dreamcatcher serve`
 2. Start OpenClaw normally — the plugin auto-connects
 3. Use OpenClaw as usual. Transcripts are captured automatically.
 4. At 3 AM, the nightly pipeline extracts memories and re-fine-tunes your model.
@@ -71,5 +71,5 @@ export DREAMCATCHER_AGENT_NAME="openclaw"
 ## Requirements
 
 - Node >= 22 (OpenClaw requirement)
-- Running Dreamcatcher server (`dreamcatcher serve`)
-- Python 3.10+ (for Dreamcatcher server)
+- Running Living Memory server (`dreamcatcher serve`)
+- Python 3.10+ (for Living Memory server)

@@ -27,7 +27,7 @@ import httpx
 logging.basicConfig(
     stream=sys.stderr,
     level=logging.INFO,
-    format="[living-memory-mcp] %(levelname)s: %(message)s",
+    format="[Living Memory] %(levelname)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -163,7 +163,7 @@ def _create_server():
     from mcp.server.fastmcp import FastMCP
 
     instructions = _build_instructions()
-    mcp = FastMCP("living-memory", instructions=instructions)
+    mcp = FastMCP("Living Memory", instructions=instructions)
 
     # ── Tool: living_memory_recall ─────────────────────────────
 
