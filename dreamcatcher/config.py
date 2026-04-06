@@ -31,15 +31,23 @@ class TrainingConfig:
 
 
 @dataclass
+class ExtractionConfig:
+    provider: str = "anthropic"
+    model: str = "claude-sonnet-4-20250514"
+
+
+@dataclass
 class ServerConfig:
     host: str = "0.0.0.0"
     port: int = 8420
+    stale_model_threshold_hours: float = 36.0
 
 
 @dataclass
 class DreamcatcherConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
+    extraction: ExtractionConfig = field(default_factory=ExtractionConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     db_path: str = "./data/memory.db"
     sessions_dir: str = "./data/sessions"
@@ -57,6 +65,9 @@ class DreamcatcherConfig:
         if "training" in raw:
             cfg.training = TrainingConfig(**{k: v for k, v in raw["training"].items()
                                              if k in TrainingConfig.__dataclass_fields__})
+        if "extraction" in raw:
+            cfg.extraction = ExtractionConfig(**{k: v for k, v in raw["extraction"].items()
+                                                  if k in ExtractionConfig.__dataclass_fields__})
         if "server" in raw:
             cfg.server = ServerConfig(**{k: v for k, v in raw["server"].items()
                                          if k in ServerConfig.__dataclass_fields__})
@@ -64,6 +75,9 @@ class DreamcatcherConfig:
             for attr in ("db_path", "sessions_dir", "training_dir", "models_dir"):
                 if attr in raw["paths"]:
                     setattr(cfg, attr, raw["paths"][attr])
-        for d in [cfg.sessions_dir, cfg.training_dir, cfg.models_dir]:
-            Path(d).mkdir(parents=True, exist_ok=True)
         return cfg
+
+    def ensure_dirs(self):
+        """Create data directories if they don't exist."""
+        for d in [self.sessions_dir, self.training_dir, self.models_dir]:
+            Path(d).mkdir(parents=True, exist_ok=True)

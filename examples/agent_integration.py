@@ -3,7 +3,7 @@ Dreamcatcher v2 Agent Integration Examples
 =====================================
 Three patterns for connecting any AI agent to personal memory.
 """
-from dreamcatcher_client import PersonalMemory, enhance_system_prompt, generate_claude_md
+from dreamcatcher_client import LivingMemory, enhance_system_prompt, generate_claude_md
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -27,7 +27,7 @@ def openclaw_shutdown(session_log: str):
     """Run this when an OpenClaw session ends."""
 
     # Save the session for tonight's training
-    with PersonalMemory() as memory:
+    with LivingMemory() as memory:
         sid = memory.save_session(session_log, agent_name="openclaw")
         if sid:
             print(f"Session {sid} saved for nightly training")
@@ -68,7 +68,7 @@ def run_agent_with_memory(user_message: str):
 def smart_agent_routing(user_message: str):
     """Example: route to different tools based on user's memory."""
 
-    with PersonalMemory() as memory:
+    with LivingMemory() as memory:
         if not memory.is_available():
             print("Running without personal memory")
             return
@@ -99,7 +99,7 @@ class TrackedSession:
     """Auto-tracks conversation turns and saves on exit."""
 
     def __init__(self, agent_name: str = "agent"):
-        self.memory = PersonalMemory()
+        self.memory = LivingMemory()
         self.agent_name = agent_name
         self.turns = []
         self.context = ""

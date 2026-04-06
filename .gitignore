@@ -4,10 +4,12 @@ data/
 
 # Environment
 .env
+.venv/
 __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
+dreamcatcher_memory.egg-info/
 dist/
 build/
 

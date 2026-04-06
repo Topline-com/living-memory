@@ -91,9 +91,9 @@ That's it. Your memory model is live. Now integrate it with your agents.
 Every agent integration has exactly two touchpoints. At session start, get context. At session end, save the transcript.
 
 ```python
-from dreamcatcher_client import DreamcatcherMemory
+from dreamcatcher_client import LivingMemory
 
-memory = DreamcatcherMemory()  # Connects to localhost:8420
+memory = LivingMemory()  # Connects to localhost:8420
 
 # SESSION START: inject personal context into your agent's system prompt
 context = memory.get_context("What should I focus on today?")
@@ -127,9 +127,9 @@ Personal context is injected into Claude's system prompt at session start. Conve
 Add this to your agent's initialization:
 
 ```python
-from dreamcatcher_client import DreamcatcherMemory
+from dreamcatcher_client import LivingMemory
 
-memory = DreamcatcherMemory()
+memory = LivingMemory()
 
 # Before sending the first message to Claude:
 personal_context = memory.get_context(user_message)
@@ -146,9 +146,9 @@ memory.save_session(full_transcript, agent_name="openclaw")
 ### Hermes Agent Integration
 
 ```python
-from dreamcatcher_client import DreamcatcherMemory
+from dreamcatcher_client import LivingMemory
 
-memory = DreamcatcherMemory()
+memory = LivingMemory()
 
 class HermesAgent:
     def on_session_start(self, user_query):

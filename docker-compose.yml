@@ -4,8 +4,11 @@
 
 services:
   # Inference server: always running, serves memory queries on :8420
+  # Uses the lightweight 'server' stage (no GPU deps)
   server:
-    build: .
+    build:
+      context: .
+      target: server
     ports:
       - "8420:8420"
     volumes:
@@ -16,9 +19,12 @@ services:
     command: dreamcatcher serve
 
   # Nightly training: runs the full pipeline at 3 AM via cron
+  # Uses the 'training' stage with PyTorch installed
   # Requires GPU access for training. Remove deploy section if CPU-only.
   nightly:
-    build: .
+    build:
+      context: .
+      target: training
     volumes:
       - ./data:/app/data
       - ./config.yaml:/app/config.yaml

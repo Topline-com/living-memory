@@ -38,6 +38,7 @@ def main():
 
     command = sys.argv[1]
     config = DreamcatcherConfig.load()
+    config.ensure_dirs()
     commands = {
         "init": cmd_init,
         "ingest": cmd_ingest,

@@ -200,7 +200,8 @@ class SessionCollector:
             timestamp=session.get("timestamp", "unknown"),
             transcript=session["raw_transcript"][:50000],
         )
-        provider = os.environ.get("DREAMCATCHER_PROVIDER", "anthropic")
+        provider = self.config.extraction.provider if hasattr(self.config, 'extraction') else "anthropic"
+        provider = os.environ.get("DREAMCATCHER_PROVIDER", provider)
         try:
             if provider == "openai":
                 return await self._call_openai(user_msg)
@@ -211,9 +212,10 @@ class SessionCollector:
 
     async def _call_anthropic(self, user_msg: str) -> list[dict]:
         import anthropic
+        model = self.config.extraction.model if hasattr(self.config, 'extraction') else "claude-sonnet-4-20250514"
         client = anthropic.AsyncAnthropic()
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=model,
             max_tokens=8192,
             system=EXTRACTION_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_msg}],

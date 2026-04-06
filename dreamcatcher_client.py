@@ -5,9 +5,9 @@ Single-file client for the Dreamcatcher inference server.
 No dependencies beyond httpx. Copy this file into your agent codebase.
 
 Usage:
-    from dreamcatcher_client import PersonalMemory
+    from dreamcatcher_client import LivingMemory
 
-    memory = PersonalMemory()
+    memory = LivingMemory()
     context = memory.get_context("Help me debug the auth flow")
     # → Returns structured personal context to inject into your LLM's prompt
 
@@ -19,7 +19,7 @@ import httpx
 from typing import Optional
 
 
-class PersonalMemory:
+class LivingMemory:
     """Client for the Dreamcatcher inference server."""
 
     def __init__(self, base_url: str = "http://localhost:8420", timeout: float = 30.0):
@@ -90,7 +90,7 @@ class PersonalMemory:
 def enhance_system_prompt(system_prompt: str, user_query: str,
                           url: str = "http://localhost:8420") -> str:
     """One-liner to enhance any system prompt with personal memory."""
-    with PersonalMemory(url) as m:
+    with LivingMemory(url) as m:
         if not m.is_available():
             return system_prompt
         ctx = m.get_context(user_query)
@@ -100,7 +100,7 @@ def enhance_system_prompt(system_prompt: str, user_query: str,
 def generate_claude_md(output_path: str = "CLAUDE.md",
                        url: str = "http://localhost:8420") -> str:
     """Generate a CLAUDE.md memory file for Claude Code / OpenClaw."""
-    with PersonalMemory(url) as m:
+    with LivingMemory(url) as m:
         if not m.is_available():
             return ""
         ctx = m.get_context("comprehensive user profile summary", max_tokens=1024)
@@ -110,3 +110,8 @@ def generate_claude_md(output_path: str = "CLAUDE.md",
                 f.write(content)
             return content
     return ""
+
+
+# ── Backward compatibility aliases ─────────────────────────────────
+PersonalMemory = LivingMemory
+DreamcatcherMemory = LivingMemory

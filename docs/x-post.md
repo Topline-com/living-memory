@@ -108,5 +108,5 @@ This is what AI-augmented research looks like in 2026. Not "AI wrote my paper." 
 
 The best part: a year from now the hardware is faster and the small models are better, and this approach only gets more practical. The design space of "compact enough to re-fine-tune nightly" expands every time someone releases a better small model. Yesterday it was Gemma 4. Tomorrow it'll be something even better. We're building on a curve that bends in the right direction.
 
-White paper: [link]
-Code: [link]
+White paper: https://github.com/alexskatell/living-memory/blob/main/docs/whitepaper.md
+Code: https://github.com/alexskatell/living-memory

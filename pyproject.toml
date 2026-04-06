@@ -9,7 +9,7 @@ description = "Living memory for AI agents — nightly re-fine-tuning of compact
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
-authors = [{name = "Alex [Last Name]"}]
+authors = [{name = "Alex Skatell"}]
 keywords = ["ai", "agents", "memory", "fine-tuning", "personal-ai", "dreamcatcher", "living-memory"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -53,8 +53,9 @@ all = ["dreamcatcher-memory[train,openai,claude-code]"]
 dreamcatcher = "dreamcatcher.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/[username]/dreamcatcher"
-Documentation = "https://github.com/[username]/dreamcatcher#readme"
+Homepage = "https://github.com/alexskatell/living-memory"
+Documentation = "https://github.com/alexskatell/living-memory#readme"
+Repository = "https://github.com/alexskatell/living-memory"
 
 [tool.setuptools.packages.find]
 include = ["dreamcatcher*"]

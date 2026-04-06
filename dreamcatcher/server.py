@@ -121,10 +121,24 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
 
     @app.get("/health")
     async def health():
+        model_age_hours = None
+        model_path = Path(config.models_dir) / "current"
+        if model_path.exists():
+            try:
+                model_date = datetime.fromtimestamp(
+                    model_path.resolve().stat().st_mtime, tz=timezone.utc
+                )
+                model_age_hours = round(
+                    (datetime.now(timezone.utc) - model_date).total_seconds() / 3600, 1
+                )
+            except Exception:
+                pass
+
         return {
             "status": "ok",
             "model_loaded": _model is not None,
-            "model_path": str(Path(config.models_dir) / "current"),
+            "model_path": str(model_path),
+            "model_age_hours": model_age_hours,
             "stats": _db.stats() if _db else {},
         }
 
@@ -373,7 +387,12 @@ def _parse_memories(raw: str) -> list[dict]:
 
 
 def _search_db(query: str, limit: int = 10) -> list[dict]:
-    """Simple keyword search over the memory database."""
+    """Simple keyword search over the memory database.
+
+    TODO: Upgrade to embedding-based search using all-MiniLM-L6-v2
+    (already configured in config.yaml for dedup). Word-overlap is a
+    stopgap that misses semantic similarity. See issue #XX.
+    """
     if not _db:
         return []
     all_memories = _db.get_active_memories(limit=200)
