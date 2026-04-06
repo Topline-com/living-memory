@@ -119,6 +119,10 @@ Unlike the Hermes and OpenClaw integrations (which hook into agent lifecycle eve
 - Run a fresh nightly: `dreamcatcher nightly`
 - The server has disaster recovery — if the model is >36h stale, it injects recent DB memories directly
 
+**`ModuleNotFoundError: No module named 'dreamcatcher'` / MCP disconnects on restart**
+- This is a known issue with editable installs (`pip install -e .`) on uv-managed Python 3.12. The MCP server runs from an arbitrary working directory and can't find the package.
+- Fix: `pip install .` (non-editable) or `pip install dreamcatcher-memory[claude-code]`
+
 **Tools don't appear in Claude Code**
 - Restart Claude Code after setup
 - Verify settings: check `~/.claude/settings.json` or `.claude/settings.json`

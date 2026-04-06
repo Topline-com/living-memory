@@ -20,6 +20,8 @@ pip install pytest pytest-asyncio
 pytest tests/ -v
 ```
 
+> **Note (uv / Python 3.12):** If you installed Python via [uv](https://github.com/astral-sh/uv), editable installs (`-e`) may silently break — Python's `site` module skips `.pth` files starting with `_`, preventing the package from being found outside the project directory. This particularly affects the MCP server, which runs from an arbitrary working directory. If you hit `ModuleNotFoundError: No module named 'dreamcatcher'`, reinstall without `-e`: `pip install ".[all]"`
+
 ## Project Structure
 
 ```

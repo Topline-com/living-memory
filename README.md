@@ -22,7 +22,7 @@ git clone https://github.com/alexskatell/living-memory.git
 cd living-memory
 
 # Install (server + client only — no GPU required for inference)
-pip install -e .
+pip install .
 
 # For training on Apple Silicon (Mac M1/M2/M3/M4 — recommended):
 pip install mlx anthropic
@@ -366,6 +366,9 @@ Your `mlx-lm` version is too old. Gemma 4 support was added after v0.31.1. Insta
 
 **Training runs but loss shows 0.0000**
 The MLX Python training API doesn't return loss directly. The actual training loss is printed to the console during training (look for the per-step loss reports). The 0.0 in the summary is a logging limitation, not an actual zero loss.
+
+**`ModuleNotFoundError: No module named 'dreamcatcher'` (especially with MCP / Claude Code)**
+This happens when the package was installed in editable mode (`pip install -e .`) and your Python was installed via uv. Python 3.12's `site` module skips `.pth` files whose names start with `_`, which breaks setuptools editable installs. The module works from the project directory but fails from anywhere else (which is how the MCP server runs). Fix: reinstall in non-editable mode: `pip install .`
 
 **`dreamcatcher nightly` only works from the project directory**
 The `config.yaml` uses relative paths (`./data/...`). Either `cd` to the project root before running, or set absolute paths in `config.yaml`.
