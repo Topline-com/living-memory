@@ -18,7 +18,7 @@ Architecture:
   → Inference Server → Agent Integration
   → Browsable Knowledge Vault (Obsidian-compatible)
 """
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 from .config import DreamcatcherConfig
 from .database import MemoryDB

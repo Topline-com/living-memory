@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dreamcatcher-memory"
-version = "0.4.0"
+version = "0.5.0"
 description = "Living memory for AI agents — nightly re-fine-tuning of compact models on personal data"
 readme = "README.md"
 license = {text = "MIT"}
