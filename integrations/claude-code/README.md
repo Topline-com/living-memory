@@ -11,6 +11,8 @@ dreamcatcher setup claude-code --global
 
 That's it. Restart Claude Code and your personal memory is active.
 
+> **Note:** With `--global`, the setup command configures both the Claude Code CLI (`~/.claude/settings.json`) and the Claude Desktop app (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS) in one step.
+
 ## What It Does
 
 | Event | Living Memory Action |

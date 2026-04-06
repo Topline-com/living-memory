@@ -19,6 +19,7 @@ Usage:
   dreamcatcher export                      Export memories as JSON
   dreamcatcher cleanup [--keep N]          Remove old model checkpoints
 """
+import os
 import sys
 import json
 import asyncio
@@ -280,27 +281,8 @@ def _setup_claude_code(config):
         mcp_command = sys.executable
         mcp_args = ["-m", "dreamcatcher.mcp_server"]
 
-    # Step 3: Determine settings path
-    if use_global:
-        settings_dir = Path.home() / ".claude"
-    else:
-        settings_dir = Path.cwd() / ".claude"
-
-    settings_path = settings_dir / "settings.json"
-    settings_dir.mkdir(parents=True, exist_ok=True)
-
-    # Step 4: Read existing settings
-    if settings_path.exists():
-        with open(settings_path) as f:
-            settings = json.load(f)
-    else:
-        settings = {}
-
-    # Step 5: Merge MCP server config
-    if "mcpServers" not in settings:
-        settings["mcpServers"] = {}
-
-    settings["mcpServers"]["living-memory"] = {
+    # Step 3: Build the MCP server entry
+    mcp_entry = {
         "type": "stdio",
         "command": mcp_command,
         "args": mcp_args,
@@ -309,14 +291,61 @@ def _setup_claude_code(config):
         },
     }
 
-    # Step 6: Write settings
-    with open(settings_path, "w") as f:
+    # Step 4: Determine config paths
+    # Claude Code CLI config
+    if use_global:
+        cli_settings_dir = Path.home() / ".claude"
+    else:
+        cli_settings_dir = Path.cwd() / ".claude"
+    cli_settings_path = cli_settings_dir / "settings.json"
+
+    # Claude Desktop app config (platform-specific)
+    if sys.platform == "darwin":
+        desktop_config_path = Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+    elif sys.platform == "win32":
+        appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+        desktop_config_path = appdata / "Claude" / "claude_desktop_config.json"
+    else:
+        desktop_config_path = Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+
+    # Step 5: Write Claude Code CLI config
+    cli_settings_dir.mkdir(parents=True, exist_ok=True)
+    if cli_settings_path.exists():
+        with open(cli_settings_path) as f:
+            settings = json.load(f)
+    else:
+        settings = {}
+
+    if "mcpServers" not in settings:
+        settings["mcpServers"] = {}
+    settings["mcpServers"]["living-memory"] = mcp_entry
+
+    with open(cli_settings_path, "w") as f:
         json.dump(settings, f, indent=2)
         f.write("\n")
 
     scope = "global" if use_global else "project"
-    print(f"\n  ✓ MCP server configured in {scope} settings")
-    print(f"    {settings_path}")
+    print(f"\n  ✓ Claude Code (CLI) configured ({scope})")
+    print(f"    {cli_settings_path}")
+
+    # Step 6: Write Claude Desktop app config (if global and directory exists)
+    if use_global and desktop_config_path.parent.exists():
+        if desktop_config_path.exists():
+            with open(desktop_config_path) as f:
+                desktop_config = json.load(f)
+        else:
+            desktop_config = {}
+
+        if "mcpServers" not in desktop_config:
+            desktop_config["mcpServers"] = {}
+        desktop_config["mcpServers"]["living-memory"] = mcp_entry
+
+        with open(desktop_config_path, "w") as f:
+            json.dump(desktop_config, f, indent=2)
+            f.write("\n")
+
+        print(f"\n  ✓ Claude Desktop app configured")
+        print(f"    {desktop_config_path}")
 
     # Step 7: Optional CLAUDE.md generation
     if generate_claude_md:
