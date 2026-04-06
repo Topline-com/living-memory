@@ -58,7 +58,8 @@ class DreamcatcherConfig:
             cfg.training = TrainingConfig(**{k: v for k, v in raw["training"].items()
                                              if k in TrainingConfig.__dataclass_fields__})
         if "server" in raw:
-            cfg.server = ServerConfig(**raw["server"])
+            cfg.server = ServerConfig(**{k: v for k, v in raw["server"].items()
+                                         if k in ServerConfig.__dataclass_fields__})
         if "paths" in raw:
             for attr in ("db_path", "sessions_dir", "training_dir", "models_dir"):
                 if attr in raw["paths"]:
