@@ -182,31 +182,37 @@ class MemoryTrainer:
         # ── Configure training ────────────────────────────────────
         # Full fine-tuning: all parameters trainable (no LoRA adapters)
         tc = self.config.training
+        num_iters = len(examples) * tc.epochs // tc.batch_size
         training_args = TrainingArgs(
             batch_size=tc.batch_size,
-            iters=len(examples) * tc.epochs // tc.batch_size,
+            iters=num_iters,
             val_batches=0,  # No validation split — we benchmark separately
-            learning_rate=tc.learning_rate,
             steps_per_report=10,
             steps_per_eval=0,
-            save_every=999999,  # Don't save intermediate checkpoints
+            steps_per_save=num_iters + 1,  # Don't save intermediate checkpoints
             max_seq_length=self.config.model.max_seq_length,
             grad_checkpoint=True,  # Critical for fitting 2.3B in 24GB
+        )
+
+        # ── Create optimizer ──────────────────────────────────────
+        optimizer = optim.AdamW(
+            learning_rate=tc.learning_rate,
+            weight_decay=tc.weight_decay,
         )
 
         # ── Output directory ──────────────────────────────────────
         output_dir = Path(self.config.models_dir) / f"training_mlx_{today}"
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"  Training with MLX (full fine-tune, {tc.epochs} epochs)...")
+        print(f"  Training with MLX (full fine-tune, {tc.epochs} epochs, {num_iters} iters)...")
 
         # ── Run training ──────────────────────────────────────────
         try:
             mlx_train(
                 model=model,
-                tokenizer=tokenizer,
+                optimizer=optimizer,
                 args=training_args,
-                train_dataset=train_file,
+                train_dataset=str(train_file),
             )
             loss_final = 0.0  # mlx_train doesn't return loss directly; we log from console
         except Exception as e:

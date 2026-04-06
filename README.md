@@ -25,7 +25,9 @@ cd living-memory
 pip install -e .
 
 # For training on Apple Silicon (Mac M1/M2/M3/M4 — recommended):
-pip install mlx mlx-lm anthropic
+pip install mlx anthropic
+# mlx-lm >=0.31.2 required for Gemma 4 support. Install from main until PyPI catches up:
+pip install git+https://github.com/ml-explore/mlx-lm.git
 
 # For training on NVIDIA GPU:
 pip install -e ".[train]"
@@ -44,7 +46,7 @@ cp .env.example .env
 
 ```bash
 dreamcatcher init
-# Creates data directories and downloads the base model (Qwen3.5-0.8B, ~1.6GB)
+# Creates data directories and downloads the base model (Gemma 4 E2B by default, ~1.5GB quantized)
 ```
 
 ### 4. Feed it a transcript
@@ -230,7 +232,7 @@ server:
 
 ## Training on Apple Silicon
 
-Dreamcatcher auto-detects Apple Silicon and uses MLX for training. The default model (Gemma 4 E2B, ~2.3B effective parameters) produces the highest-quality structured JSON output but requires more memory and training time than smaller alternatives.
+Dreamcatcher auto-detects Apple Silicon and uses MLX for training. **Requires `mlx-lm` >=0.31.2** for Gemma 4 support (install from GitHub main until the PyPI release catches up). The default model (Gemma 4 E2B, ~2.3B effective parameters) produces the highest-quality structured JSON output but requires more memory and training time than smaller alternatives.
 
 **Gemma 4 E2B on Mac M4 24GB (default):**
 Gemma 4 E2B's ~2.3B trainable core (PLE embedding tables frozen) fits in 24GB unified memory with gradient checkpointing enabled. Training times are longer than smaller models but well within the overnight window: approximately 25-45 minutes for 6-12 months of accumulated data (with semantic compression), scaling to 50-90 minutes at the 2-3 year mark. The quality gain in structured output is meaningful — sharper recall, more consistent JSON formatting, fewer edge-case hallucinations in the memory layer. Use a learning rate of 5e-6 (set in config.yaml by default) rather than the 2e-5 used for smaller models.
@@ -268,9 +270,10 @@ Set up the cron job to run the full pipeline automatically:
 
 ```bash
 # Add to crontab (runs at 3 AM daily)
-(crontab -l 2>/dev/null; echo "0 3 * * * cd $(pwd) && dreamcatcher nightly >> data/nightly.log 2>&1") | crontab -
+# Note: cron doesn't load your shell profile, so source .env explicitly
+(crontab -l 2>/dev/null; echo "0 3 * * * cd $(pwd) && set -a && source .env && set +a && dreamcatcher nightly >> data/nightly.log 2>&1") | crontab -
 
-# Or use the provided script
+# Or use the provided script (recommended — handles .env loading for you)
 chmod +x scripts/train_nightly.sh
 # Add to crontab: 0 3 * * * /path/to/dreamcatcher/scripts/train_nightly.sh
 ```
@@ -343,6 +346,22 @@ The trained memory model and all personal data stay on your device. During infer
 
 **How does it handle outdated information?**
 Session dates are injected into the extraction prompt, so facts carry temporal markers ("As of April 2026, the user routes through Qwen"). The model learns recency through natural language. Important changes get reinforced through organic reuse across future sessions.
+
+---
+
+## Troubleshooting
+
+**"Could not resolve authentication method" during `dreamcatcher nightly`**
+Your `ANTHROPIC_API_KEY` isn't reaching the process. The CLI auto-loads `.env` via `python-dotenv`, so make sure your key is in `.env` in the project root. If running via cron, source `.env` explicitly (see Nightly Automation above). You can verify with: `ANTHROPIC_API_KEY=sk-ant-... dreamcatcher extract`
+
+**"Model type gemma4 not supported" during training**
+Your `mlx-lm` version is too old. Gemma 4 support was added after v0.31.1. Install from main: `pip install git+https://github.com/ml-explore/mlx-lm.git`. Once mlx-lm >=0.31.2 ships on PyPI, `pip install --upgrade mlx-lm` will work.
+
+**Training runs but loss shows 0.0000**
+The MLX Python training API doesn't return loss directly. The actual training loss is printed to the console during training (look for the per-step loss reports). The 0.0 in the summary is a logging limitation, not an actual zero loss.
+
+**`dreamcatcher nightly` only works from the project directory**
+The `config.yaml` uses relative paths (`./data/...`). Either `cd` to the project root before running, or set absolute paths in `config.yaml`.
 
 ---
 

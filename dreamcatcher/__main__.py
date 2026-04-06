@@ -25,6 +25,13 @@ import asyncio
 from pathlib import Path
 from datetime import datetime, timezone
 
+# Load .env before anything reads os.environ
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv is optional; users can export vars manually
+
 from .config import DreamcatcherConfig
 from .database import MemoryDB
 from .collector import SessionCollector, TrainingDataBuilder
