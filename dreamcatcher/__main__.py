@@ -353,16 +353,17 @@ def cmd_quickstart(config):
     # ── Phase 6: Demo / Sample Transcript ──────────────────────
 
     print(f"\n  Phase 6: First data")
-    sample_path = Path(__file__).parent.parent / "examples" / "sample_transcript.txt"
-    if sample_path.exists():
-        if _confirm("Ingest a sample transcript to test the system?"):
-            collector = SessionCollector(config)
-            sid = collector.ingest_file(str(sample_path), "quickstart-demo")
-            print(f"  Ingested sample session: {sid}")
-            print(f"  Run 'dreamcatcher nightly' to extract memories from it.")
-    else:
-        print(f"  No sample transcript found. Ingest your own with:")
-        print(f"    dreamcatcher ingest <file>")
+    # Embedded sample so it works in wheel installs (examples/ not packaged)
+    _SAMPLE_TRANSCRIPT = (
+        "User: I'm working on a project called Horizon — it's a real-time analytics "
+        "dashboard for our SaaS product. We're using React on the frontend and FastAPI "
+        "on the backend. The launch target is end of Q2."
+    )
+    if _confirm("Ingest a sample transcript to test the system?"):
+        collector = SessionCollector(config)
+        sid = collector.ingest_text(_SAMPLE_TRANSCRIPT, "quickstart-demo")
+        print(f"  Ingested sample session: {sid}")
+        print(f"  Run 'dreamcatcher nightly' to extract memories from it.")
 
     # ── Summary ────────────────────────────────────────────────
 
