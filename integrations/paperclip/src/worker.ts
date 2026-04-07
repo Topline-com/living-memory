@@ -222,9 +222,18 @@ export async function setup(ctx: PluginContext): Promise<void> {
     async (event: PluginEvent) => {
       const companyId = event.scope[1];
       const payload = event.payload;
-      const transcript =
-        (payload.transcript as string) || (payload.summary as string);
-      if (!transcript) return;
+      // Only ingest full transcripts — summaries strip the specific details
+      // (names, decisions, reasoning, exact phrasing) that make memories useful.
+      const transcript = payload.transcript as string | undefined;
+      if (!transcript) {
+        if (payload.summary) {
+          ctx.activity.log("memory.auto_ingest.skipped", {
+            team_id: companyId,
+            reason: "only summary available, need full transcript",
+          });
+        }
+        return;
+      }
 
       const agentName = (payload.agentName as string) || "unknown";
       try {

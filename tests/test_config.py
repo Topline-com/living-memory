@@ -23,8 +23,8 @@ class TestDefaults:
 
     def test_default_extraction(self):
         cfg = DreamcatcherConfig()
-        assert cfg.extraction.provider == "anthropic"
-        assert "claude" in cfg.extraction.model
+        assert cfg.extraction.provider == "openrouter"
+        assert cfg.extraction.model == "minimax/minimax-m2.7"
 
     def test_default_server(self):
         cfg = DreamcatcherConfig()

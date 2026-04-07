@@ -32,6 +32,7 @@ _config = None
 _db = None
 _collector = None
 _teams: TeamMemoryManager = None
+_team_models: dict = {}  # team_id -> (model, tokenizer, backend)
 
 
 def _load_model(config: DreamcatcherConfig):
@@ -119,7 +120,7 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
     app = FastAPI(
         title="Dreamcatcher — Personal Memory LLM",
         description="Query your personal memory model",
-        version="0.2.0",
+        version="2026.4.7",
         lifespan=lifespan,
     )
 
@@ -365,7 +366,28 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
     async def team_recall(team_id: str, req: RecallRequest):
         start = time.time()
         db = _teams.get_db(team_id)
-        memories = _team_search_db(db, req.query)
+        memories = []
+        source = "none"
+
+        # Try the team's trained model first
+        t_model, t_tok, t_backend = _get_team_model(team_id)
+        if t_model and t_tok:
+            raw = _generate_with(t_model, t_tok, t_backend, req.query, req.max_tokens)
+            memories = _parse_memories(raw)
+            source = "model"
+
+        # Fall back to / supplement with database search
+        db_memories = _team_search_db(db, req.query)
+        if not memories and db_memories:
+            memories = db_memories
+            source = "database"
+        elif memories and db_memories:
+            seen = {m.get("content", "")[:50] for m in memories}
+            for m in db_memories:
+                if m.get("content", "")[:50] not in seen:
+                    memories.append(m)
+            source = "hybrid"
+
         response_text = "\n".join(
             f"[{m.get('category', '?')}] {m.get('content', '')}"
             for m in memories
@@ -374,7 +396,7 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
         return MemoryResponse(
             response=response_text,
             memories=memories,
-            source="database" if memories else "none",
+            source=source,
             latency_ms=round(latency, 1),
         )
 
@@ -382,8 +404,22 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
     async def team_context(team_id: str, req: ContextRequest):
         start = time.time()
         db = _teams.get_db(team_id)
-        all_memories = _team_search_db(db, req.query, limit=20)
-        source = "database" if all_memories else "none"
+        all_memories = []
+        source = "none"
+
+        # Try team model first
+        t_model, t_tok, t_backend = _get_team_model(team_id)
+        if t_model and t_tok:
+            for q in [req.query, "What are the team's active projects and priorities?"]:
+                raw = _generate_with(t_model, t_tok, t_backend, q, max_tokens=req.max_tokens // 2)
+                all_memories.extend(_parse_memories(raw))
+            source = "model"
+
+        # Supplement with DB search
+        db_mems = _team_search_db(db, req.query, limit=20)
+        if db_mems:
+            all_memories.extend(db_mems)
+            source = "hybrid" if source == "model" else "database"
 
         # Deduplicate
         seen = set()
@@ -570,6 +606,88 @@ def _search_db(query: str, limit: int = 10) -> list[dict]:
          "confidence": m.get("confidence", 1.0)}
         for _, m in scored[:limit]
     ]
+
+
+def _get_team_model(team_id: str) -> tuple:
+    """Load and cache a team's trained model. Returns (model, tokenizer, backend) or (None, None, None)."""
+    if team_id in _team_models:
+        return _team_models[team_id]
+
+    cfg = _teams.get_config(team_id)
+    current_model = Path(cfg.models_dir) / "current"
+    if not current_model.exists():
+        _team_models[team_id] = (None, None, None)
+        return (None, None, None)
+
+    model_path = current_model.resolve()
+
+    # Try MLX first
+    adapter_config = model_path / "adapter_config.json"
+    if adapter_config.exists():
+        try:
+            with open(adapter_config) as f:
+                acfg = json.load(f)
+            base_model = acfg.get("model", cfg.model.name)
+            from mlx_lm import load as mlx_load
+            model, tokenizer = mlx_load(base_model, adapter_path=str(model_path))
+            _team_models[team_id] = (model, tokenizer, "mlx")
+            return (model, tokenizer, "mlx")
+        except Exception:
+            pass
+
+    # Try PyTorch
+    try:
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        tokenizer = AutoTokenizer.from_pretrained(str(model_path))
+        model = AutoModelForCausalLM.from_pretrained(
+            str(model_path), torch_dtype=torch.float16, device_map="auto",
+        )
+        model.eval()
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        _team_models[team_id] = (model, tokenizer, "pytorch")
+        return (model, tokenizer, "pytorch")
+    except Exception:
+        _team_models[team_id] = (None, None, None)
+        return (None, None, None)
+
+
+def _generate_with(model, tokenizer, backend: str, query: str, max_tokens: int = 256) -> str:
+    """Generate from a specific model/tokenizer pair (personal or team)."""
+    if not model or not tokenizer:
+        return ""
+
+    messages = [
+        {"role": "system", "content": SYSTEM_MSG},
+        {"role": "user", "content": query},
+    ]
+
+    if backend == "mlx":
+        from mlx_lm import generate as mlx_generate
+        from mlx_lm.sample_utils import make_sampler
+        if hasattr(tokenizer, "apply_chat_template"):
+            prompt = tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+        else:
+            prompt = f"<|system|>\n{SYSTEM_MSG}\n<|user|>\n{query}\n<|assistant|>\n"
+        sampler = make_sampler(temp=0.3, top_p=0.9)
+        return mlx_generate(model, tokenizer, prompt=prompt, max_tokens=max_tokens, sampler=sampler)
+
+    # PyTorch
+    input_text = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+    inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
+    import torch
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs, max_new_tokens=max_tokens, temperature=0.3,
+            top_p=0.9, repetition_penalty=1.1, do_sample=True,
+        )
+    generated = outputs[0][inputs["input_ids"].shape[1]:]
+    return tokenizer.decode(generated, skip_special_tokens=True).strip()
 
 
 def _team_search_db(db: MemoryDB, query: str, limit: int = 10) -> list[dict]:

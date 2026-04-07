@@ -98,8 +98,10 @@ def cmd_init(config):
     print(f"  (This may take a few minutes on first run...)")
     try:
         from transformers import AutoModelForCausalLM, AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(config.model.name, trust_remote_code=True)
-        model = AutoModelForCausalLM.from_pretrained(config.model.name, trust_remote_code=True)
+        TRUSTED_PREFIXES = ("Qwen/", "google/gemma")
+        needs_remote_code = any(config.model.name.startswith(p) for p in TRUSTED_PREFIXES)
+        tokenizer = AutoTokenizer.from_pretrained(config.model.name, trust_remote_code=needs_remote_code)
+        model = AutoModelForCausalLM.from_pretrained(config.model.name, trust_remote_code=needs_remote_code)
         print(f"  Base model ready: {config.model.name}")
         # Count parameters
         n_params = sum(p.numel() for p in model.parameters())
@@ -114,7 +116,7 @@ def cmd_init(config):
 
     print(f"\n  Initialization complete!")
     print(f"  Next steps:")
-    print(f"    1. Add your ANTHROPIC_API_KEY to .env")
+    print(f"    1. Add your OPENROUTER_API_KEY to .env")
     print(f"    2. Ingest transcripts:  dreamcatcher ingest <file>")
     print(f"    3. Run first pipeline:  dreamcatcher nightly")
     print(f"    4. Start serving:       dreamcatcher serve")
@@ -183,34 +185,33 @@ def cmd_nightly(config):
     builder = TrainingDataBuilder(config)
     data = builder.build_training_set()
     if not data:
-        print("  No training data yet. Pipeline complete (nothing to train on).")
-        return
-    print()
-
-    # Step 3: Re-fine-tune from base weights on the complete dataset
-    print("Step 3/4: Re-fine-tuning memory model from base weights...")
-    trainer = MemoryTrainer(config)
-    result = trainer.train()
-
-    # Step 4: Export the browsable knowledge vault
-    print("\nStep 4/4: Updating knowledge vault...")
-    try:
-        from .wiki import WikiExporter
-        exporter = WikiExporter(config)
-        exporter.export()
-    except Exception as e:
-        print(f"  Wiki export skipped: {e}")
-
-    print(f"\n{'='*60}")
-    if result.get("status") == "success":
-        print(f"  Nightly pipeline complete!")
-        print(f"  {result['num_examples']} examples → {result['model_name']}")
-        print(f"  Loss: {result['loss_final']:.4f} | Time: {result['duration_seconds']}s")
+        print("  No personal training data yet. Skipping personal model training.")
     else:
-        print(f"  Pipeline finished with status: {result.get('status')}")
-    print(f"{'='*60}\n")
+        print()
+        # Step 3: Re-fine-tune from base weights on the complete dataset
+        print("Step 3/4: Re-fine-tuning memory model from base weights...")
+        trainer = MemoryTrainer(config)
+        result = trainer.train()
 
-    # Also run team pipelines if any teams exist
+        # Step 4: Export the browsable knowledge vault
+        print("\nStep 4/4: Updating knowledge vault...")
+        try:
+            from .wiki import WikiExporter
+            exporter = WikiExporter(config)
+            exporter.export()
+        except Exception as e:
+            print(f"  Wiki export skipped: {e}")
+
+        print(f"\n{'='*60}")
+        if result.get("status") == "success":
+            print(f"  Personal pipeline complete!")
+            print(f"  {result['num_examples']} examples → {result['model_name']}")
+            print(f"  Loss: {result['loss_final']:.4f} | Time: {result['duration_seconds']}s")
+        else:
+            print(f"  Pipeline finished with status: {result.get('status')}")
+        print(f"{'='*60}\n")
+
+    # Always run team pipelines regardless of personal pipeline result
     from .teams import TeamMemoryManager
     teams_mgr = TeamMemoryManager(config)
     team_ids = teams_mgr.list_teams()
@@ -218,14 +219,14 @@ def cmd_nightly(config):
         print(f"\n  Running nightly for team: {tid}")
         team_config = teams_mgr.get_config(tid)
         team_config.ensure_dirs()
-        collector = teams_mgr.get_collector(tid)
-        t_memories = asyncio.run(collector.extract_memories())
+        t_collector = teams_mgr.get_collector(tid)
+        t_memories = asyncio.run(t_collector.extract_memories())
         print(f"    → {len(t_memories)} new memories")
-        builder = TrainingDataBuilder(team_config)
-        data = builder.build_training_set()
-        if data:
-            trainer = MemoryTrainer(team_config)
-            trainer.train()
+        t_builder = TrainingDataBuilder(team_config)
+        t_data = t_builder.build_training_set()
+        if t_data:
+            t_trainer = MemoryTrainer(team_config)
+            t_trainer.train()
 
 
 def cmd_serve(config):
@@ -298,8 +299,16 @@ def _setup_claude_code(config):
     # Step 2: Resolve the dreamcatcher command
     dc_cmd = shutil.which("dreamcatcher")
     if not dc_cmd:
-        # Fallback: use the current Python interpreter with -m
-        dc_cmd = f"{sys.executable} -m dreamcatcher.mcp_server"
+        # Fallback: use the Python interpreter with -m
+        # Avoid sys.executable under uv run — it points to a temp binary
+        # that gets cleaned up after the command finishes.
+        python_path = sys.executable
+        if "/tmp/" in python_path or "/temp/" in python_path.lower():
+            # Under uv run: resolve the real Python from PATH
+            stable_python = shutil.which("python3") or shutil.which("python")
+            if stable_python:
+                python_path = stable_python
+        dc_cmd = f"{python_path} -m dreamcatcher.mcp_server"
     else:
         dc_cmd = f"{dc_cmd} mcp"
 
