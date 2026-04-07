@@ -609,17 +609,27 @@ def _search_db(query: str, limit: int = 10) -> list[dict]:
 
 
 def _get_team_model(team_id: str) -> tuple:
-    """Load and cache a team's trained model. Returns (model, tokenizer, backend) or (None, None, None)."""
-    if team_id in _team_models:
-        return _team_models[team_id]
+    """Load and cache a team's trained model. Returns (model, tokenizer, backend) or (None, None, None).
 
+    Cache is invalidated when:
+    - No model was cached (negative results are never cached so new models are detected)
+    - The models/current symlink points to a different path than what was cached (nightly retrained)
+    """
     cfg = _teams.get_config(team_id)
     current_model = Path(cfg.models_dir) / "current"
+
     if not current_model.exists():
-        _team_models[team_id] = (None, None, None)
+        # Don't cache negative results — model may appear after nightly training
         return (None, None, None)
 
     model_path = current_model.resolve()
+
+    # Check if we have a cached model and it's still the same path
+    if team_id in _team_models:
+        cached_model, cached_tok, cached_backend, cached_path = _team_models[team_id]
+        if str(model_path) == cached_path:
+            return (cached_model, cached_tok, cached_backend)
+        # Model path changed (nightly retrained) — reload below
 
     # Try MLX first
     adapter_config = model_path / "adapter_config.json"
@@ -630,7 +640,7 @@ def _get_team_model(team_id: str) -> tuple:
             base_model = acfg.get("model", cfg.model.name)
             from mlx_lm import load as mlx_load
             model, tokenizer = mlx_load(base_model, adapter_path=str(model_path))
-            _team_models[team_id] = (model, tokenizer, "mlx")
+            _team_models[team_id] = (model, tokenizer, "mlx", str(model_path))
             return (model, tokenizer, "mlx")
         except Exception:
             pass
@@ -646,10 +656,9 @@ def _get_team_model(team_id: str) -> tuple:
         model.eval()
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
-        _team_models[team_id] = (model, tokenizer, "pytorch")
+        _team_models[team_id] = (model, tokenizer, "pytorch", str(model_path))
         return (model, tokenizer, "pytorch")
     except Exception:
-        _team_models[team_id] = (None, None, None)
         return (None, None, None)
 
 
