@@ -26,5 +26,5 @@ python-dotenv>=1.0.0
 # Auto-detected by the trainer when running on Apple Silicon.
 
 # ── Memory extraction (frontier LLM API) ──
-anthropic>=0.25.0
-# openai>=1.20.0    # Uncomment if using OpenAI as extraction provider
+openai>=1.20.0     # Required for default OpenRouter provider
+# anthropic>=0.25.0  # Uncomment if using Anthropic as extraction provider

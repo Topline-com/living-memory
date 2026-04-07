@@ -36,12 +36,12 @@ training:
   max_pair_index_old: 1      # Keep pair_index 0-1 (semantic + contextual) for old facts
 
 # Memory extraction (uses frontier LLM API — the one cloud touchpoint)
-# Default: Anthropic (requires ANTHROPIC_API_KEY).
-# Switch to OpenRouter for model variety — set provider: "openrouter" and
-# OPENROUTER_API_KEY in .env. Requires `pip install openai`.
+# Default: OpenRouter (requires OPENROUTER_API_KEY).
+# Switch models by changing `model` — any OpenRouter slug works.
+# Alternative providers: set provider to "anthropic" or "openai".
 extraction:
-  provider: "anthropic"  # "anthropic" | "openrouter" | "openai"
-  model: "claude-sonnet-4-20250514"  # Anthropic model; for OpenRouter use e.g. "minimax/minimax-m2.7"
+  provider: "openrouter"  # "openrouter" | "anthropic" | "openai"
+  model: "minimax/minimax-m2.7"  # any OpenRouter model slug works here
 
 # Deduplication
 dedup:

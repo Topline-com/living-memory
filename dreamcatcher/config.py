@@ -32,8 +32,8 @@ class TrainingConfig:
 
 @dataclass
 class ExtractionConfig:
-    provider: str = "anthropic"
-    model: str = "claude-sonnet-4-20250514"
+    provider: str = "openrouter"
+    model: str = "minimax/minimax-m2.7"
 
 
 @dataclass
