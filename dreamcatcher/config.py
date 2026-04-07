@@ -64,8 +64,13 @@ class DreamcatcherConfig:
                 config_path_obj = Path(__file__).parent.parent / config_path
         path = config_path_obj
         raw = yaml.safe_load(open(path)) if path.exists() else {}
-        # Anchor for resolving relative data paths: directory containing config.yaml
-        base_dir = path.parent.resolve() if path.exists() else Path(__file__).parent.parent.resolve()
+        # Anchor for resolving relative data paths: directory containing config.yaml.
+        # If no config.yaml found, use ~/.dreamcatcher/ as the user data root
+        # (not the package dir, which may be inside site-packages).
+        if path.exists():
+            base_dir = path.parent.resolve()
+        else:
+            base_dir = (Path.home() / ".dreamcatcher").resolve()
         cfg = cls()
         # Resolve default relative paths against base_dir so they work from any cwd
         for attr in ("db_path", "sessions_dir", "training_dir", "models_dir"):

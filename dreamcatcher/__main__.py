@@ -188,14 +188,24 @@ def cmd_quickstart(config):
     print(f"\n  Phase 2: Training dependencies")
     backend = platform_info["training_backend"]
 
+    def _pip_install(packages: list[str]) -> bool:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install"] + packages,
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            print(f"  Done.")
+            return True
+        else:
+            print(f"  Install failed. Run manually: pip install {' '.join(packages)}")
+            return False
+
     if backend == "mlx":
         print(f"  MLX is installed and ready for training.")
     elif backend == "mlx_needed":
         if _confirm("Install MLX for Apple Silicon training?"):
             print(f"  Installing mlx and mlx-lm...")
-            subprocess.run([sys.executable, "-m", "pip", "install", "mlx", "mlx-lm"],
-                           capture_output=True)
-            print(f"  Done.")
+            _pip_install(["mlx", "mlx-lm"])
         else:
             print(f"  Skipped. You can install later: pip install mlx mlx-lm")
     elif backend == "pytorch_cuda":
@@ -203,20 +213,15 @@ def cmd_quickstart(config):
     elif backend == "pytorch_needed":
         if _confirm("Install PyTorch for GPU/CPU training?"):
             print(f"  Installing training dependencies...")
-            subprocess.run([sys.executable, "-m", "pip", "install",
-                           "torch>=2.2.0", "transformers>=4.51.0", "datasets>=2.19.0",
-                           "accelerate>=0.28.0", "safetensors>=0.4.0"],
-                           capture_output=True)
-            print(f"  Done.")
+            _pip_install(["torch>=2.2.0", "transformers>=4.51.0", "datasets>=2.19.0",
+                          "accelerate>=0.28.0", "safetensors>=0.4.0"])
         else:
             print(f"  Skipped. Install later: pip install dreamcatcher-memory[train]")
     elif backend == "pytorch_cpu":
         print(f"  No GPU detected. Training will use CPU (slower).")
         if _confirm("Install PyTorch for CPU training?"):
-            subprocess.run([sys.executable, "-m", "pip", "install",
-                           "torch>=2.2.0", "transformers>=4.51.0", "datasets>=2.19.0",
-                           "accelerate>=0.28.0"], capture_output=True)
-            print(f"  Done.")
+            _pip_install(["torch>=2.2.0", "transformers>=4.51.0", "datasets>=2.19.0",
+                          "accelerate>=0.28.0"])
 
     # ── Phase 3: API Key ───────────────────────────────────────
 
@@ -318,7 +323,10 @@ def cmd_quickstart(config):
                         sys.argv = ["dreamcatcher", "setup", "claude-code", "--global"]
                         _setup_claude_code(config)
                         integrations_configured.append("Claude Code (MCP)")
-                        nightly_scheduled.append("Claude Code (scheduled task)")
+                        # Note: nightly scheduling for Claude Code requires
+                        # the scheduled task to be activated from within Claude Code
+                        # (via /scheduled or the Scheduled tab). MCP setup alone
+                        # doesn't create the scheduler.
                     elif name == "hermes":
                         sys.argv = ["dreamcatcher", "setup", "hermes"]
                         _setup_hermes(config)
