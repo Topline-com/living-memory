@@ -93,6 +93,18 @@ class DreamcatcherConfig:
                     setattr(cfg, attr, val)
         return cfg
 
+    def for_team(self, team_id: str) -> "DreamcatcherConfig":
+        """Return a copy with all paths scoped to a team directory."""
+        from dataclasses import replace
+        team_dir = Path(self.db_path).parent / "teams" / team_id
+        return replace(
+            self,
+            db_path=str(team_dir / "memory.db"),
+            sessions_dir=str(team_dir / "sessions"),
+            training_dir=str(team_dir / "training"),
+            models_dir=str(team_dir / "models"),
+        )
+
     def ensure_dirs(self):
         """Create data directories if they don't exist."""
         for d in [self.sessions_dir, self.training_dir, self.models_dir]:

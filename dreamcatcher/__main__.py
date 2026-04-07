@@ -18,6 +18,9 @@ Usage:
   dreamcatcher stats                       Show statistics
   dreamcatcher export                      Export memories as JSON
   dreamcatcher cleanup [--keep N]          Remove old model checkpoints
+  dreamcatcher team list                   List all teams
+  dreamcatcher team stats <team_id>        Show team memory stats
+  dreamcatcher team nightly [<team_id>]    Run nightly pipeline for one/all teams
 """
 import os
 import sys
@@ -65,6 +68,7 @@ def main():
         "stats": cmd_stats,
         "export": cmd_export,
         "cleanup": cmd_cleanup,
+        "team": cmd_team,
     }
 
     if command in commands:
@@ -205,6 +209,23 @@ def cmd_nightly(config):
     else:
         print(f"  Pipeline finished with status: {result.get('status')}")
     print(f"{'='*60}\n")
+
+    # Also run team pipelines if any teams exist
+    from .teams import TeamMemoryManager
+    teams_mgr = TeamMemoryManager(config)
+    team_ids = teams_mgr.list_teams()
+    for tid in team_ids:
+        print(f"\n  Running nightly for team: {tid}")
+        team_config = teams_mgr.get_config(tid)
+        team_config.ensure_dirs()
+        collector = teams_mgr.get_collector(tid)
+        t_memories = asyncio.run(collector.extract_memories())
+        print(f"    → {len(t_memories)} new memories")
+        builder = TrainingDataBuilder(team_config)
+        data = builder.build_training_set()
+        if data:
+            trainer = MemoryTrainer(team_config)
+            trainer.train()
 
 
 def cmd_serve(config):
@@ -388,6 +409,92 @@ def _setup_claude_code(config):
     print(f"    • Provide living_memory_recall for on-demand memory queries")
     print(f"    • Auto-save conversations for nightly memory training")
     print()
+
+
+def cmd_team(config):
+    """Manage team memory pools."""
+    from .teams import TeamMemoryManager
+
+    if len(sys.argv) < 3:
+        print("Usage: dreamcatcher team <list|stats|nightly> [team_id]")
+        sys.exit(1)
+
+    subcmd = sys.argv[2]
+    teams = TeamMemoryManager(config)
+
+    if subcmd == "list":
+        team_ids = teams.list_teams()
+        if not team_ids:
+            print("  No teams found.")
+        else:
+            print(f"\n  Teams ({len(team_ids)}):")
+            for tid in team_ids:
+                s = teams.team_stats(tid)
+                print(f"    {tid:30s}  {s.get('active_memories', 0)} memories, "
+                      f"{s.get('unprocessed_sessions', 0)} unprocessed sessions")
+            print()
+
+    elif subcmd == "stats":
+        if len(sys.argv) < 4:
+            print("Usage: dreamcatcher team stats <team_id>")
+            sys.exit(1)
+        team_id = sys.argv[3]
+        s = teams.team_stats(team_id)
+        print(f"\n  Team: {team_id}")
+        print(f"  {'─'*40}")
+        print(f"  Sessions:          {s['total_sessions']} total, {s['unprocessed_sessions']} unprocessed")
+        print(f"  Active memories:   {s['active_memories']}")
+        print(f"  Training examples: {s['total_training_examples']}")
+        print(f"  Training runs:     {s['training_runs']}")
+        if s.get("memories_by_category"):
+            print(f"\n  By category:")
+            for cat, count in sorted(s["memories_by_category"].items()):
+                print(f"    {cat:20s} {count}")
+        print()
+
+    elif subcmd == "nightly":
+        team_id = sys.argv[3] if len(sys.argv) > 3 else None
+        target_teams = [team_id] if team_id else teams.list_teams()
+        if not target_teams:
+            print("  No teams found.")
+            return
+
+        for tid in target_teams:
+            print(f"\n{'='*60}")
+            print(f"  Team Nightly Pipeline: {tid}")
+            print(f"  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+            print(f"{'='*60}\n")
+
+            team_config = teams.get_config(tid)
+            team_config.ensure_dirs()
+
+            # Step 1: Extract
+            print("  Step 1/3: Extracting memories...")
+            collector = teams.get_collector(tid)
+            memories = asyncio.run(collector.extract_memories())
+            print(f"    → {len(memories)} new memories\n")
+
+            # Step 2: Build training set
+            print("  Step 2/3: Building training dataset...")
+            builder = TrainingDataBuilder(team_config)
+            data = builder.build_training_set()
+            if not data:
+                print("    No training data. Skipping training.\n")
+                continue
+
+            # Step 3: Train
+            print("  Step 3/3: Re-fine-tuning team memory model...")
+            trainer = MemoryTrainer(team_config)
+            result = trainer.train()
+            if result.get("status") == "success":
+                print(f"    → {result['num_examples']} examples, loss {result['loss_final']:.4f}\n")
+            else:
+                print(f"    → {result.get('status')}: {result.get('reason', '?')}\n")
+
+    else:
+        print(f"Unknown team subcommand: {subcmd}")
+        print("Available: list, stats, nightly")
+        sys.exit(1)
 
 
 def cmd_wiki(config):

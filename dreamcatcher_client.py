@@ -75,6 +75,54 @@ class LivingMemory:
         except Exception:
             return None
 
+    # ── Team-scoped methods ──────────────────────────────────────
+
+    def team_save_session(self, team_id: str, transcript: str,
+                          agent_name: str = "agent",
+                          extract_now: bool = False) -> Optional[str]:
+        """Save a session to a team's shared memory."""
+        try:
+            resp = self._client.post(f"{self.base_url}/teams/{team_id}/ingest", json={
+                "transcript": transcript, "agent_name": agent_name,
+                "extract_now": extract_now,
+            })
+            return resp.json().get("session_id") if resp.status_code == 200 else None
+        except Exception:
+            return None
+
+    def team_recall(self, team_id: str, query: str, max_tokens: int = 256) -> str:
+        """Ask the team memory for specific information."""
+        try:
+            resp = self._client.post(f"{self.base_url}/teams/{team_id}/recall", json={
+                "query": query, "max_tokens": max_tokens,
+            })
+            return resp.json().get("response", "") if resp.status_code == 200 else ""
+        except Exception:
+            return ""
+
+    def team_get_context(self, team_id: str, query: str = "",
+                         agent_name: str = "agent", max_tokens: int = 512) -> str:
+        """Get team context to inject into an agent's system prompt."""
+        try:
+            resp = self._client.post(f"{self.base_url}/teams/{team_id}/context", json={
+                "query": query, "agent_name": agent_name, "max_tokens": max_tokens,
+            })
+            return resp.json().get("response", "") if resp.status_code == 200 else ""
+        except Exception:
+            return ""
+
+    def team_get_memories(self, team_id: str, category: Optional[str] = None,
+                          limit: int = 50) -> list[dict]:
+        """List active memories from a team."""
+        try:
+            params = {"limit": limit}
+            if category:
+                params["category"] = category
+            resp = self._client.get(f"{self.base_url}/teams/{team_id}/memories", params=params)
+            return resp.json().get("memories", []) if resp.status_code == 200 else []
+        except Exception:
+            return []
+
     def close(self):
         self._client.close()
 

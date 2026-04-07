@@ -1,0 +1,31 @@
+{
+  "name": "@living-memory/paperclip-plugin",
+  "version": "0.1.0",
+  "description": "Living Memory plugin for Paperclip — shared team memory across AI agents",
+  "type": "module",
+  "main": "dist/worker.js",
+  "types": "dist/worker.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "paperclip",
+    "paperclip-plugin",
+    "memory",
+    "living-memory",
+    "dreamcatcher",
+    "team-memory",
+    "parametric-memory"
+  ],
+  "author": "Alex Skatell",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}

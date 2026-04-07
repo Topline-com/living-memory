@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 from .config import DreamcatcherConfig
 from .database import MemoryDB
 from .collector import SessionCollector
+from .teams import TeamMemoryManager
 
 # ── Global state ────────────────────────────────────────────────────
 _model = None
@@ -30,6 +31,7 @@ _backend = None  # "mlx" or "pytorch"
 _config = None
 _db = None
 _collector = None
+_teams: TeamMemoryManager = None
 
 
 def _load_model(config: DreamcatcherConfig):
@@ -103,10 +105,11 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
 
     @asynccontextmanager
     async def lifespan(app):
-        global _config, _db, _collector
+        global _config, _db, _collector, _teams
         _config = config
         _db = MemoryDB(config.db_path)
         _collector = SessionCollector(config)
+        _teams = TeamMemoryManager(config)
         _load_model(config)
         yield
         global _model, _tokenizer
@@ -342,6 +345,122 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
     async def stats():
         return _db.stats() if _db else {}
 
+    # ── Team-scoped endpoints ──────────────────────────────────
+
+    @app.post("/teams/{team_id}/ingest")
+    async def team_ingest(team_id: str, req: IngestRequest):
+        collector = _teams.get_collector(team_id)
+        session_id = collector.ingest_text(req.transcript, req.agent_name)
+        result = {"team_id": team_id, "session_id": session_id, "status": "stored"}
+        if req.extract_now:
+            try:
+                memories = await collector.extract_memories(session_id)
+                result["status"] = "extracted"
+                result["memories_extracted"] = len(memories)
+            except Exception as e:
+                result["extraction_error"] = str(e)
+        return result
+
+    @app.post("/teams/{team_id}/recall", response_model=MemoryResponse)
+    async def team_recall(team_id: str, req: RecallRequest):
+        start = time.time()
+        db = _teams.get_db(team_id)
+        memories = _team_search_db(db, req.query)
+        response_text = "\n".join(
+            f"[{m.get('category', '?')}] {m.get('content', '')}"
+            for m in memories
+        ) if memories else "No team memories found for this query."
+        latency = (time.time() - start) * 1000
+        return MemoryResponse(
+            response=response_text,
+            memories=memories,
+            source="database" if memories else "none",
+            latency_ms=round(latency, 1),
+        )
+
+    @app.post("/teams/{team_id}/context", response_model=MemoryResponse)
+    async def team_context(team_id: str, req: ContextRequest):
+        start = time.time()
+        db = _teams.get_db(team_id)
+        all_memories = _team_search_db(db, req.query, limit=20)
+        source = "database" if all_memories else "none"
+
+        # Deduplicate
+        seen = set()
+        unique = []
+        for m in all_memories:
+            key = m.get("content", "")[:60]
+            if key not in seen:
+                seen.add(key)
+                unique.append(m)
+        all_memories = unique
+
+        # Format as injectable context block
+        if all_memories:
+            by_cat = {}
+            for m in all_memories:
+                cat = m.get("category", "other")
+                if cat not in by_cat:
+                    by_cat[cat] = []
+                by_cat[cat].append(m.get("content", ""))
+            lines = [f"<team_memory team=\"{team_id}\">"]
+            for cat in ("fact", "project", "preference", "pattern", "relationship", "decision", "other"):
+                if cat in by_cat:
+                    lines.append(f"[{cat.upper()}]")
+                    for item in by_cat[cat][:10]:
+                        lines.append(f"  {item}")
+            lines.append("</team_memory>")
+            response_text = "\n".join(lines)
+        else:
+            response_text = ""
+
+        latency = (time.time() - start) * 1000
+        return MemoryResponse(
+            response=response_text,
+            memories=all_memories,
+            source=source,
+            latency_ms=round(latency, 1),
+        )
+
+    @app.get("/teams/{team_id}/memories")
+    async def team_list_memories(team_id: str, category: Optional[str] = None, limit: int = 50):
+        db = _teams.get_db(team_id)
+        memories = db.get_active_memories(category=category, limit=limit)
+        return {"team_id": team_id, "memories": memories, "count": len(memories)}
+
+    @app.get("/teams/{team_id}/stats")
+    async def team_stats(team_id: str):
+        return _teams.team_stats(team_id)
+
+    @app.get("/teams/{team_id}/health")
+    async def team_health(team_id: str):
+        cfg = _teams.get_config(team_id)
+        model_path = Path(cfg.models_dir) / "current"
+        model_age_hours = None
+        if model_path.exists():
+            try:
+                model_date = datetime.fromtimestamp(
+                    model_path.resolve().stat().st_mtime, tz=timezone.utc
+                )
+                model_age_hours = round(
+                    (datetime.now(timezone.utc) - model_date).total_seconds() / 3600, 1
+                )
+            except Exception:
+                pass
+        db = _teams.get_db(team_id)
+        return {
+            "team_id": team_id,
+            "status": "ok",
+            "model_path": str(model_path),
+            "model_age_hours": model_age_hours,
+            "stats": db.stats(),
+        }
+
+    @app.get("/teams")
+    async def list_teams():
+        teams = _teams.list_teams()
+        return {"teams": teams, "count": len(teams)}
+
     return app
 
 
@@ -438,6 +557,24 @@ def _search_db(query: str, limit: int = 10) -> list[dict]:
     if not _db:
         return []
     all_memories = _db.get_active_memories(limit=200)
+    query_words = set(query.lower().split())
+    scored = []
+    for m in all_memories:
+        content_lower = m["content"].lower()
+        hits = sum(1 for w in query_words if w in content_lower)
+        if hits > 0:
+            scored.append((hits, m))
+    scored.sort(key=lambda x: -x[0])
+    return [
+        {"category": m["category"], "content": m["content"],
+         "confidence": m.get("confidence", 1.0)}
+        for _, m in scored[:limit]
+    ]
+
+
+def _team_search_db(db: MemoryDB, query: str, limit: int = 10) -> list[dict]:
+    """Keyword search over a team's memory database."""
+    all_memories = db.get_active_memories(limit=200)
     query_words = set(query.lower().split())
     scored = []
     for m in all_memories:
