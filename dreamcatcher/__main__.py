@@ -1164,6 +1164,7 @@ def cmd_update(config):
             return
     else:
         # Installed via pip/wheel: upgrade from PyPI
+        # Try python -m pip first, fall back to uv pip for unseeded uv envs
         print(f"\n  Detected pip-installed package. Upgrading...")
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", "--upgrade", "dreamcatcher-memory"],
@@ -1171,6 +1172,23 @@ def cmd_update(config):
         )
         if result.returncode == 0:
             print(f"  Package upgraded.")
+        elif "No module named pip" in result.stderr:
+            uv_bin = shutil.which("uv")
+            if uv_bin:
+                print(f"  pip not available, trying uv...")
+                result = subprocess.run(
+                    [uv_bin, "pip", "install", "--upgrade", "dreamcatcher-memory"],
+                    capture_output=True, text=True,
+                )
+                if result.returncode == 0:
+                    print(f"  Package upgraded via uv.")
+                else:
+                    print(f"  Upgrade failed: {result.stderr.strip()}")
+                    return
+            else:
+                print(f"  Neither pip nor uv found. Run manually:")
+                print(f"    pip install --upgrade dreamcatcher-memory")
+                return
         else:
             print(f"  Upgrade failed: {result.stderr.strip()}")
             return
@@ -1276,12 +1294,11 @@ def cmd_uninstall(config):
             pass
 
     # Step 6: Warn about Paperclip (remote routine can't be removed locally)
-    # Check if Paperclip was ever configured by looking for the plugin
-    paperclip_plugin = Path(__file__).parent.parent / "integrations" / "paperclip"
-    if paperclip_plugin.exists():
-        print(f"\n  Note: If you configured a Paperclip routine, it must be")
-        print(f"  removed from the Paperclip UI or API separately.")
-        print(f"  Living Memory cannot delete remote Paperclip routines.")
+    # Always show this — harmless if Paperclip was never configured, and
+    # the source tree check doesn't work in wheel installs.
+    print(f"\n  Note: If you configured a Paperclip routine via")
+    print(f"  'dreamcatcher setup paperclip', it must be removed from")
+    print(f"  the Paperclip UI or API separately.")
 
     if removed:
         print(f"\n  Removed integrations:")
