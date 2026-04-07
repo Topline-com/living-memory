@@ -1132,14 +1132,16 @@ def cmd_update(config):
     import shutil
 
     project_dir = Path(__file__).resolve().parent.parent
+    is_source_checkout = (project_dir / ".git").exists()
+    is_editable = (project_dir / "pyproject.toml").exists() and is_source_checkout
 
     print(f"\n  Living Memory — Update")
     print(f"  {'─'*40}")
 
-    # Step 1: Git pull (if in a git repo)
-    git_dir = project_dir / ".git"
-    if git_dir.exists():
-        print(f"\n  Pulling latest code...")
+    if is_editable:
+        # Source checkout: git pull + pip install -e .
+        print(f"\n  Detected source checkout at {project_dir}")
+        print(f"  Pulling latest code...")
         result = subprocess.run(
             ["git", "pull"], cwd=str(project_dir),
             capture_output=True, text=True,
@@ -1150,19 +1152,30 @@ def cmd_update(config):
             print(f"  Git pull failed: {result.stderr.strip()}")
             print(f"  Continuing with reinstall...")
 
-    # Step 2: Reinstall package
-    print(f"\n  Reinstalling package...")
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-e", "."],
-        cwd=str(project_dir), capture_output=True, text=True,
-    )
-    if result.returncode == 0:
-        print(f"  Package reinstalled.")
+        print(f"\n  Reinstalling from source...")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-e", "."],
+            cwd=str(project_dir), capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            print(f"  Package reinstalled.")
+        else:
+            print(f"  Install failed: {result.stderr.strip()}")
+            return
     else:
-        print(f"  Install failed: {result.stderr.strip()}")
-        return
+        # Installed via pip/wheel: upgrade from PyPI
+        print(f"\n  Detected pip-installed package. Upgrading...")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", "dreamcatcher-memory"],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            print(f"  Package upgraded.")
+        else:
+            print(f"  Upgrade failed: {result.stderr.strip()}")
+            return
 
-    # Step 3: Show new version
+    # Show new version
     try:
         from importlib import reload
         import dreamcatcher as dc
@@ -1262,12 +1275,20 @@ def cmd_uninstall(config):
         except Exception:
             pass
 
+    # Step 6: Warn about Paperclip (remote routine can't be removed locally)
+    # Check if Paperclip was ever configured by looking for the plugin
+    paperclip_plugin = Path(__file__).parent.parent / "integrations" / "paperclip"
+    if paperclip_plugin.exists():
+        print(f"\n  Note: If you configured a Paperclip routine, it must be")
+        print(f"  removed from the Paperclip UI or API separately.")
+        print(f"  Living Memory cannot delete remote Paperclip routines.")
+
     if removed:
         print(f"\n  Removed integrations:")
         for r in removed:
             print(f"    - {r}")
     else:
-        print(f"\n  No integration configs found to remove.")
+        print(f"\n  No local integration configs found to remove.")
 
     # Step 6: Optionally remove data
     data_dir = Path(config.db_path).parent
