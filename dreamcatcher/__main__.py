@@ -19,6 +19,9 @@ Usage:
   dreamcatcher stats                       Show statistics
   dreamcatcher export                      Export memories as JSON
   dreamcatcher cleanup [--keep N]          Remove old model checkpoints
+  dreamcatcher update                      Pull latest code + reinstall dependencies
+  dreamcatcher uninstall                   Remove configs, integrations, and optionally data
+  dreamcatcher reinstall                   Full uninstall + quickstart in one command
   dreamcatcher team list                   List all teams
   dreamcatcher team stats <team_id>        Show team memory stats
   dreamcatcher team nightly [<team_id>]    Run nightly pipeline for one/all teams
@@ -52,7 +55,7 @@ def main():
     config = DreamcatcherConfig.load()
     # MCP server only talks to the HTTP API — skip creating data dirs
     # (avoids read-only filesystem errors when launched by Claude Desktop)
-    if command not in ("mcp", "quickstart"):
+    if command not in ("mcp", "quickstart", "uninstall", "reinstall"):
         config.ensure_dirs()
     commands = {
         "quickstart": cmd_quickstart,
@@ -70,6 +73,9 @@ def main():
         "stats": cmd_stats,
         "export": cmd_export,
         "cleanup": cmd_cleanup,
+        "update": cmd_update,
+        "uninstall": cmd_uninstall,
+        "reinstall": cmd_reinstall,
         "team": cmd_team,
     }
 
@@ -1110,6 +1116,184 @@ def cmd_cleanup(config):
         print(f"  rm {d.name}")
         shutil.rmtree(d)
     print("Done.")
+
+
+def cmd_update(config):
+    """Pull latest code and reinstall dependencies."""
+    import subprocess
+    import shutil
+
+    project_dir = Path(__file__).resolve().parent.parent
+
+    print(f"\n  Living Memory — Update")
+    print(f"  {'─'*40}")
+
+    # Step 1: Git pull (if in a git repo)
+    git_dir = project_dir / ".git"
+    if git_dir.exists():
+        print(f"\n  Pulling latest code...")
+        result = subprocess.run(
+            ["git", "pull"], cwd=str(project_dir),
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            print(f"  {result.stdout.strip()}")
+        else:
+            print(f"  Git pull failed: {result.stderr.strip()}")
+            print(f"  Continuing with reinstall...")
+
+    # Step 2: Reinstall package
+    print(f"\n  Reinstalling package...")
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-e", "."],
+        cwd=str(project_dir), capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        print(f"  Package reinstalled.")
+    else:
+        print(f"  Install failed: {result.stderr.strip()}")
+        return
+
+    # Step 3: Show new version
+    try:
+        from importlib import reload
+        import dreamcatcher as dc
+        reload(dc)
+        print(f"\n  Updated to version {dc.__version__}")
+    except Exception:
+        pass
+
+    print(f"\n  Update complete!")
+    print(f"  Restart 'dreamcatcher serve' if it's running.\n")
+
+
+def cmd_uninstall(config):
+    """Remove Living Memory configs, integrations, and optionally data."""
+    import shutil
+
+    print(f"\n  Living Memory — Uninstall")
+    print(f"  {'─'*40}")
+
+    removed = []
+
+    # Step 1: Remove Claude Code MCP config
+    for settings_path in [
+        Path.home() / ".claude" / "settings.json",
+        Path.cwd() / ".claude" / "settings.json",
+    ]:
+        if settings_path.exists():
+            try:
+                with open(settings_path) as f:
+                    settings = json.load(f)
+                if "mcpServers" in settings and "Living Memory" in settings["mcpServers"]:
+                    del settings["mcpServers"]["Living Memory"]
+                    with open(settings_path, "w") as f:
+                        json.dump(settings, f, indent=2)
+                        f.write("\n")
+                    removed.append(f"Claude Code MCP config ({settings_path})")
+            except Exception:
+                pass
+
+    # Step 2: Remove Claude Desktop config
+    if sys.platform == "darwin":
+        desktop_path = Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+    elif sys.platform == "win32":
+        appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+        desktop_path = appdata / "Claude" / "claude_desktop_config.json"
+    else:
+        desktop_path = Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+
+    if desktop_path.exists():
+        try:
+            with open(desktop_path) as f:
+                dc_config = json.load(f)
+            if "mcpServers" in dc_config and "Living Memory" in dc_config["mcpServers"]:
+                del dc_config["mcpServers"]["Living Memory"]
+                with open(desktop_path, "w") as f:
+                    json.dump(dc_config, f, indent=2)
+                    f.write("\n")
+                removed.append(f"Claude Desktop config ({desktop_path})")
+        except Exception:
+            pass
+
+    # Step 3: Remove Claude Code scheduled task
+    sched_dir = Path.home() / ".claude" / "scheduled-tasks" / "living-memory-nightly"
+    if sched_dir.exists():
+        shutil.rmtree(sched_dir)
+        removed.append("Claude Code scheduled task")
+
+    # Step 4: Remove Hermes cron job
+    hermes_jobs = Path.home() / ".hermes" / "cron" / "jobs.json"
+    if hermes_jobs.exists():
+        try:
+            with open(hermes_jobs) as f:
+                jobs = json.load(f)
+            before = len(jobs)
+            jobs = [j for j in jobs if j.get("id") != "living-memory-nightly"]
+            if len(jobs) < before:
+                with open(hermes_jobs, "w") as f:
+                    json.dump(jobs, f, indent=2)
+                    f.write("\n")
+                removed.append("Hermes cron job")
+        except Exception:
+            pass
+
+    # Step 5: Remove OpenClaw cron job
+    openclaw_jobs = Path.home() / ".openclaw" / "cron" / "jobs.json"
+    if openclaw_jobs.exists():
+        try:
+            with open(openclaw_jobs) as f:
+                jobs = json.load(f)
+            before = len(jobs)
+            jobs = [j for j in jobs if j.get("name") != "Living Memory Nightly"]
+            if len(jobs) < before:
+                with open(openclaw_jobs, "w") as f:
+                    json.dump(jobs, f, indent=2)
+                    f.write("\n")
+                removed.append("OpenClaw cron job")
+        except Exception:
+            pass
+
+    if removed:
+        print(f"\n  Removed integrations:")
+        for r in removed:
+            print(f"    - {r}")
+    else:
+        print(f"\n  No integration configs found to remove.")
+
+    # Step 6: Optionally remove data
+    data_dir = Path(config.db_path).parent
+    if data_dir.exists():
+        print(f"\n  Data directory: {data_dir}")
+        db = MemoryDB(config.db_path)
+        stats = db.stats()
+        print(f"    {stats.get('active_memories', 0)} memories, "
+              f"{stats.get('total_sessions', 0)} sessions, "
+              f"{stats.get('training_runs', 0)} training runs")
+
+        if _confirm("Delete all memory data? This cannot be undone", default=False):
+            shutil.rmtree(data_dir)
+            print(f"  Data deleted.")
+        else:
+            print(f"  Data preserved at {data_dir}")
+
+    print(f"\n  Uninstall complete.")
+    print(f"  To remove the Python package: pip uninstall dreamcatcher-memory\n")
+
+
+def cmd_reinstall(config):
+    """Full uninstall + quickstart in one command."""
+    print(f"\n  Living Memory — Reinstall")
+    print(f"  {'─'*40}")
+    print(f"  This will remove all configs and re-run the setup wizard.\n")
+
+    if not _confirm("Proceed with reinstall?"):
+        print(f"  Cancelled.\n")
+        return
+
+    cmd_uninstall(config)
+    print()
+    cmd_quickstart(config)
 
 
 if __name__ == "__main__":
