@@ -34,8 +34,11 @@ _config = None
 _db = None
 _collector = None
 _teams: TeamMemoryManager = None
-_team_models: dict = {}  # team_id -> (model, tokenizer, backend, path)
 _team_model_locks: dict = {}  # team_id -> threading.Lock
+# LRU cache for team models — bounded to prevent unbounded memory growth.
+# When full, the least-recently-used model is evicted.
+_MAX_CACHED_TEAM_MODELS = int(os.environ.get("DREAMCATCHER_MAX_TEAM_MODELS", "3"))
+_team_models: dict = {}  # OrderedDict-style: team_id -> (model, tokenizer, backend, path)
 
 
 def _load_model(config: DreamcatcherConfig):
@@ -351,44 +354,15 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
 
     # ── Nightly trigger endpoints ──────────────────────────────
 
-    _nightly_lock = threading.Lock()
-    _team_nightly_locks: dict[str, threading.Lock] = {}
-
-    def _get_team_lock(tid: str) -> threading.Lock:
-        if tid not in _team_nightly_locks:
-            _team_nightly_locks[tid] = threading.Lock()
-        return _team_nightly_locks[tid]
-
-    def _run_team_nightly(tid: str):
-        """Run nightly pipeline for one team. Acquires per-team lock.
-        Used by both /nightly (global) and /teams/{id}/nightly (direct)."""
-        import asyncio as _aio
-        from .collector import SessionCollector as _SC, TrainingDataBuilder as _TDB
-        from .trainer import MemoryTrainer as _MT
-
-        lock = _get_team_lock(tid)
-        if not lock.acquire(blocking=False):
-            print(f"  Team {tid} nightly already running, skipping")
-            return
-        try:
-            tcfg = _teams.get_config(tid)
-            tcfg.ensure_dirs()
-            tc = _SC(tcfg)
-            _aio.run(tc.extract_memories())
-            tb = _TDB(tcfg)
-            if tb.build_training_set():
-                _MT(tcfg).train()
-                _team_models.pop(tid, None)
-        except Exception as e:
-            print(f"  Team nightly error ({tid}): {e}")
-        finally:
-            lock.release()
+    # Single host-wide lock for ALL training (personal + team).
+    # Prevents overlapping GPU/CPU training jobs that would OOM on single-host.
+    _training_lock = threading.Lock()
 
     @app.post("/nightly")
     async def trigger_nightly():
         """Trigger the full nightly pipeline via HTTP. Returns immediately."""
-        if not _nightly_lock.acquire(blocking=False):
-            return {"status": "already_running", "message": "Nightly pipeline is already in progress"}
+        if not _training_lock.acquire(blocking=False):
+            return {"status": "already_running", "message": "A training job is already in progress"}
 
         def _run_nightly():
             global _model, _tokenizer, _backend
@@ -404,13 +378,23 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
                 if data:
                     _MT(config).train()
                     _load_model(config)
-                # Team pipelines — each acquires its own lock
+                # Team pipelines (sequential — shares the same lock)
                 for tid in _teams.list_teams():
-                    _run_team_nightly(tid)
+                    try:
+                        tcfg = _teams.get_config(tid)
+                        tcfg.ensure_dirs()
+                        tc = _SC(tcfg)
+                        _aio.run(tc.extract_memories())
+                        tb = _TDB(tcfg)
+                        if tb.build_training_set():
+                            _MT(tcfg).train()
+                            _team_models.pop(tid, None)
+                    except Exception as e:
+                        print(f"  Team nightly error ({tid}): {e}")
             except Exception as e:
                 print(f"  Nightly pipeline error: {e}")
             finally:
-                _nightly_lock.release()
+                _training_lock.release()
 
         threading.Thread(target=_run_nightly, daemon=True).start()
         return {"status": "started", "message": "Nightly pipeline triggered in background"}
@@ -418,10 +402,9 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
     @app.post("/teams/{team_id}/nightly")
     async def trigger_team_nightly(team_id: str):
         """Trigger nightly pipeline for a specific team. Returns immediately."""
-        lock = _get_team_lock(team_id)
-        if not lock.acquire(blocking=False):
-            return {"team_id": team_id, "status": "already_running"}
-        # Lock is held — pass to background thread which will release it
+        if not _training_lock.acquire(blocking=False):
+            return {"team_id": team_id, "status": "already_running",
+                    "message": "A training job is already in progress"}
 
         def _run():
             try:
@@ -439,7 +422,7 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
             except Exception as e:
                 print(f"  Team nightly error ({team_id}): {e}")
             finally:
-                lock.release()
+                _training_lock.release()
 
         threading.Thread(target=_run, daemon=True).start()
         return {"team_id": team_id, "status": "started"}
@@ -727,20 +710,32 @@ def _get_team_model(team_id: str) -> tuple:
 
     model_path = current_model.resolve()
 
-    # Fast path: check cache without lock
+    # Fast path: check cache without lock, promote to most-recent
     if team_id in _team_models:
         cached_model, cached_tok, cached_backend, cached_path = _team_models[team_id]
         if str(model_path) == cached_path:
+            # Move to end (most recently used)
+            _team_models[team_id] = _team_models.pop(team_id)
             return (cached_model, cached_tok, cached_backend)
 
     # Slow path: acquire lock, re-check, then load
     lock = _get_team_model_lock(team_id)
     with lock:
-        # Re-check after acquiring lock (another thread may have loaded it)
+        # Re-check after acquiring lock
         if team_id in _team_models:
             cached_model, cached_tok, cached_backend, cached_path = _team_models[team_id]
             if str(model_path) == cached_path:
+                _team_models[team_id] = _team_models.pop(team_id)
                 return (cached_model, cached_tok, cached_backend)
+
+        def _cache_team_model(tid, entry):
+            """Cache with LRU eviction when at capacity."""
+            # Evict least-recently-used if at max
+            while len(_team_models) >= _MAX_CACHED_TEAM_MODELS:
+                evicted_tid, evicted = _team_models.pop(next(iter(_team_models)))
+                print(f"  Evicted team model '{evicted_tid}' from cache (LRU, max={_MAX_CACHED_TEAM_MODELS})")
+                del evicted  # Release model memory
+            _team_models[tid] = entry
 
         # Try MLX first
         adapter_config = model_path / "adapter_config.json"
@@ -751,7 +746,7 @@ def _get_team_model(team_id: str) -> tuple:
                 base_model = acfg.get("model", cfg.model.name)
                 from mlx_lm import load as mlx_load
                 model, tokenizer = mlx_load(base_model, adapter_path=str(model_path))
-                _team_models[team_id] = (model, tokenizer, "mlx", str(model_path))
+                _cache_team_model(team_id, (model, tokenizer, "mlx", str(model_path)))
                 return (model, tokenizer, "mlx")
             except Exception:
                 pass
@@ -767,7 +762,7 @@ def _get_team_model(team_id: str) -> tuple:
             model.eval()
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
-            _team_models[team_id] = (model, tokenizer, "pytorch", str(model_path))
+            _cache_team_model(team_id, (model, tokenizer, "pytorch", str(model_path)))
             return (model, tokenizer, "pytorch")
         except Exception:
             return (None, None, None)

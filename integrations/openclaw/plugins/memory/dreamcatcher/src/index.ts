@@ -320,9 +320,8 @@ export default function register(api: PluginAPI) {
     if (role === "user") {
       transcriptLines.push(`User: ${content}`);
     } else if (role === "assistant") {
-      const truncated =
-        content.length > 4000 ? content.slice(0, 4000) + "..." : content;
-      transcriptLines.push(`Assistant: ${truncated}`);
+      // Save full content — truncation strips details that extraction needs
+      transcriptLines.push(`Assistant: ${content}`);
     }
   });
 

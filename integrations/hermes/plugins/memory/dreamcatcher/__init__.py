@@ -201,9 +201,8 @@ class DreamcatcherProvider:
             if user_msg:
                 self._transcript_lines.append(f"User: {user_msg}")
             if assistant_msg:
-                # Truncate very long assistant responses to keep transcript manageable
-                truncated = assistant_msg[:4000] + ("..." if len(assistant_msg) > 4000 else "")
-                self._transcript_lines.append(f"Assistant: {truncated}")
+                # Save full content — truncation strips details that extraction needs
+                self._transcript_lines.append(f"Assistant: {assistant_msg}")
 
     # ── Session lifecycle ─────────────────────────────────────────
 
