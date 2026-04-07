@@ -1,0 +1,1 @@
+User: I'm working on a project called Horizon — it's a real-time analytics dashboard for our SaaS product. We're using React on the frontend and FastAPI on the backend. The launch target is end of Q2.

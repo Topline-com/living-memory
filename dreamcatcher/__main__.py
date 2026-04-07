@@ -3,6 +3,7 @@
 Dreamcatcher — Living Memory for AI Agents
 =============================================
 Usage:
+  dreamcatcher quickstart                   Interactive setup wizard (recommended for new users)
   dreamcatcher init                        Initialize directories + download base model
   dreamcatcher ingest <path> [agent]       Ingest session transcripts
   dreamcatcher extract                     Extract memories (frontier LLM API call)
@@ -51,9 +52,10 @@ def main():
     config = DreamcatcherConfig.load()
     # MCP server only talks to the HTTP API — skip creating data dirs
     # (avoids read-only filesystem errors when launched by Claude Desktop)
-    if command != "mcp":
+    if command not in ("mcp", "quickstart"):
         config.ensure_dirs()
     commands = {
+        "quickstart": cmd_quickstart,
         "init": cmd_init,
         "ingest": cmd_ingest,
         "extract": cmd_extract,
@@ -77,6 +79,293 @@ def main():
         print(f"Unknown command: {command}")
         print(__doc__)
         sys.exit(1)
+
+
+def _prompt(question: str, default: str = "") -> str:
+    """Prompt user for input with optional default."""
+    suffix = f" [{default}]" if default else ""
+    try:
+        answer = input(f"  {question}{suffix}: ").strip()
+        return answer if answer else default
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return default
+
+
+def _confirm(question: str, default: bool = True) -> bool:
+    """Prompt user for yes/no with default."""
+    hint = "Y/n" if default else "y/N"
+    try:
+        answer = input(f"  {question} [{hint}]: ").strip().lower()
+        if not answer:
+            return default
+        return answer in ("y", "yes")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return default
+
+
+def _detect_platform() -> dict:
+    """Detect OS, architecture, and available training backends."""
+    import platform
+    import shutil
+
+    info = {
+        "os": sys.platform,
+        "arch": platform.machine(),
+        "python": platform.python_version(),
+        "mlx": False,
+        "cuda": False,
+        "label": "Unknown",
+        "training_backend": "none",
+    }
+
+    # Check for Apple Silicon + MLX
+    if sys.platform == "darwin" and info["arch"] == "arm64":
+        info["label"] = "macOS Apple Silicon"
+        try:
+            import mlx
+            info["mlx"] = True
+            info["training_backend"] = "mlx"
+            info["label"] += " (MLX available)"
+        except ImportError:
+            info["training_backend"] = "mlx_needed"
+            info["label"] += " (MLX not installed)"
+    elif sys.platform == "darwin":
+        info["label"] = "macOS Intel"
+        info["training_backend"] = "pytorch_cpu"
+    else:
+        info["label"] = "Linux"
+        # Check NVIDIA GPU
+        try:
+            import torch
+            if torch.cuda.is_available():
+                gpu_name = torch.cuda.get_device_name(0)
+                info["cuda"] = True
+                info["training_backend"] = "pytorch_cuda"
+                info["label"] = f"Linux (NVIDIA {gpu_name})"
+            else:
+                info["training_backend"] = "pytorch_cpu"
+        except ImportError:
+            info["training_backend"] = "pytorch_needed"
+
+    return info
+
+
+def cmd_quickstart(config):
+    """Interactive setup wizard — gets everything running in one command."""
+    import shutil
+    import subprocess
+
+    print(f"\n{'='*60}")
+    print(f"  Living Memory — Quickstart Setup")
+    print(f"{'='*60}")
+
+    integrations_configured = []
+    nightly_scheduled = []
+
+    # ── Phase 1: Platform Detection ────────────────────────────
+
+    print(f"\n  Phase 1: Detecting platform...")
+    platform_info = _detect_platform()
+    print(f"  Platform: {platform_info['label']}")
+    print(f"  Python:   {platform_info['python']}")
+
+    # Python version check
+    if sys.version_info < (3, 10):
+        print(f"\n  Python 3.10+ required (you have {platform_info['python']}).")
+        print(f"  Install with: brew install python@3.12")
+        sys.exit(1)
+
+    # ── Phase 2: Training Dependencies ─────────────────────────
+
+    print(f"\n  Phase 2: Training dependencies")
+    backend = platform_info["training_backend"]
+
+    if backend == "mlx":
+        print(f"  MLX is installed and ready for training.")
+    elif backend == "mlx_needed":
+        if _confirm("Install MLX for Apple Silicon training?"):
+            print(f"  Installing mlx and mlx-lm...")
+            subprocess.run([sys.executable, "-m", "pip", "install", "mlx", "mlx-lm"],
+                           capture_output=True)
+            print(f"  Done.")
+        else:
+            print(f"  Skipped. You can install later: pip install mlx mlx-lm")
+    elif backend == "pytorch_cuda":
+        print(f"  NVIDIA GPU detected. PyTorch with CUDA is ready.")
+    elif backend == "pytorch_needed":
+        if _confirm("Install PyTorch for GPU/CPU training?"):
+            print(f"  Installing training dependencies...")
+            subprocess.run([sys.executable, "-m", "pip", "install",
+                           "torch>=2.2.0", "transformers>=4.51.0", "datasets>=2.19.0",
+                           "accelerate>=0.28.0", "safetensors>=0.4.0"],
+                           capture_output=True)
+            print(f"  Done.")
+        else:
+            print(f"  Skipped. Install later: pip install dreamcatcher-memory[train]")
+    elif backend == "pytorch_cpu":
+        print(f"  No GPU detected. Training will use CPU (slower).")
+        if _confirm("Install PyTorch for CPU training?"):
+            subprocess.run([sys.executable, "-m", "pip", "install",
+                           "torch>=2.2.0", "transformers>=4.51.0", "datasets>=2.19.0",
+                           "accelerate>=0.28.0"], capture_output=True)
+            print(f"  Done.")
+
+    # ── Phase 3: API Key ───────────────────────────────────────
+
+    print(f"\n  Phase 3: Extraction API key")
+    env_path = Path(config.db_path).parent.parent / ".env"
+    existing_key = os.environ.get("OPENROUTER_API_KEY", "")
+
+    if existing_key and existing_key != "sk-or-...":
+        print(f"  OpenRouter API key already configured.")
+    else:
+        print(f"  Memory extraction requires an OpenRouter API key (~$0.01-0.05/night).")
+        print(f"  Get one at: https://openrouter.ai/keys")
+        key = _prompt("OpenRouter API key (or Enter to skip)")
+        if key and key != "sk-or-...":
+            # Validate the key
+            print(f"  Validating key...")
+            try:
+                from openai import OpenAI
+                client = OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=key,
+                )
+                client.models.list()
+                print(f"  Key is valid.")
+                os.environ["OPENROUTER_API_KEY"] = key
+            except Exception:
+                print(f"  Could not validate key (may still work). Saving anyway.")
+
+            # Write to .env
+            env_lines = []
+            if env_path.exists():
+                env_lines = env_path.read_text().splitlines()
+            # Replace or append
+            found = False
+            for i, line in enumerate(env_lines):
+                if line.startswith("OPENROUTER_API_KEY="):
+                    env_lines[i] = f"OPENROUTER_API_KEY={key}"
+                    found = True
+                    break
+            if not found:
+                env_lines.append(f"OPENROUTER_API_KEY={key}")
+            env_path.write_text("\n".join(env_lines) + "\n")
+            print(f"  Saved to {env_path}")
+        else:
+            print(f"  Skipped. Add your key to .env later.")
+
+    # ── Phase 4: Initialize ────────────────────────────────────
+
+    print(f"\n  Phase 4: Initializing...")
+    config.ensure_dirs()
+    db = MemoryDB(config.db_path)
+    print(f"  Database: {config.db_path}")
+    print(f"  Directories created.")
+
+    # ── Phase 5: Integration Detection + Setup ─────────────────
+
+    print(f"\n  Phase 5: Detecting integrations...")
+    detected = {}
+
+    # Claude Code
+    claude_dir = Path.home() / ".claude"
+    if claude_dir.exists():
+        detected["claude-code"] = "~/.claude/ directory found"
+
+    # Hermes
+    hermes_dir = Path.home() / ".hermes"
+    hermes_bin = shutil.which("hermes")
+    if hermes_dir.exists() or hermes_bin:
+        detected["hermes"] = "Hermes agent detected"
+
+    # OpenClaw
+    openclaw_dir = Path.home() / ".openclaw"
+    openclaw_bin = shutil.which("openclaw")
+    if openclaw_dir.exists() or openclaw_bin:
+        detected["openclaw"] = "OpenClaw detected"
+
+    # Paperclip (check if server is running)
+    try:
+        import httpx
+        resp = httpx.get("http://localhost:3000/health", timeout=2.0)
+        if resp.status_code == 200:
+            detected["paperclip"] = "Paperclip server running on :3000"
+    except Exception:
+        pass
+
+    if not detected:
+        print(f"  No agent platforms detected.")
+    else:
+        for name, reason in detected.items():
+            print(f"  Found: {name} ({reason})")
+
+        for name in detected:
+            display = {"claude-code": "Claude Code", "hermes": "Hermes",
+                       "openclaw": "OpenClaw", "paperclip": "Paperclip"}[name]
+            if _confirm(f"Configure {display} integration?"):
+                try:
+                    if name == "claude-code":
+                        # Inject --global flag for setup
+                        sys.argv = ["dreamcatcher", "setup", "claude-code", "--global"]
+                        _setup_claude_code(config)
+                        integrations_configured.append("Claude Code (MCP)")
+                        nightly_scheduled.append("Claude Code (scheduled task)")
+                    elif name == "hermes":
+                        sys.argv = ["dreamcatcher", "setup", "hermes"]
+                        _setup_hermes(config)
+                        integrations_configured.append("Hermes (plugin)")
+                        nightly_scheduled.append("Hermes (cron job)")
+                    elif name == "openclaw":
+                        sys.argv = ["dreamcatcher", "setup", "openclaw"]
+                        _setup_openclaw(config)
+                        integrations_configured.append("OpenClaw (plugin)")
+                        nightly_scheduled.append("OpenClaw (cron job)")
+                    elif name == "paperclip":
+                        print(f"  Paperclip requires --company and --agent IDs.")
+                        company = _prompt("Paperclip company ID")
+                        agent = _prompt("Paperclip agent ID")
+                        if company and agent:
+                            sys.argv = ["dreamcatcher", "setup", "paperclip",
+                                        "--company", company, "--agent", agent]
+                            _setup_paperclip(config)
+                            integrations_configured.append("Paperclip (routine)")
+                            nightly_scheduled.append("Paperclip (scheduled routine)")
+                except Exception as e:
+                    print(f"  Setup failed: {e}")
+
+    # ── Phase 6: Demo / Sample Transcript ──────────────────────
+
+    print(f"\n  Phase 6: First data")
+    sample_path = Path(__file__).parent.parent / "examples" / "sample_transcript.txt"
+    if sample_path.exists():
+        if _confirm("Ingest a sample transcript to test the system?"):
+            collector = SessionCollector(config)
+            sid = collector.ingest_file(str(sample_path), "quickstart-demo")
+            print(f"  Ingested sample session: {sid}")
+            print(f"  Run 'dreamcatcher nightly' to extract memories from it.")
+    else:
+        print(f"  No sample transcript found. Ingest your own with:")
+        print(f"    dreamcatcher ingest <file>")
+
+    # ── Summary ────────────────────────────────────────────────
+
+    print(f"\n{'='*60}")
+    print(f"  Living Memory — Setup Complete!")
+    print(f"  {'─'*40}")
+    print(f"  Platform:     {platform_info['label']}")
+    print(f"  Provider:     OpenRouter ({config.extraction.model})")
+    print(f"  Server:       http://{config.server.host}:{config.server.port}")
+    if integrations_configured:
+        print(f"  Integrations: {', '.join(integrations_configured)}")
+    if nightly_scheduled:
+        print(f"  Nightly:      {', '.join(nightly_scheduled)}")
+    print(f"\n  Next steps:")
+    print(f"    1. dreamcatcher serve          Start the inference server")
+    print(f"    2. dreamcatcher nightly        Run your first training pipeline")
+    print(f"{'='*60}\n")
 
 
 def cmd_init(config):
