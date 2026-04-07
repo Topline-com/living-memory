@@ -53,7 +53,9 @@ class TestEmbeddedSampleTranscript:
     """The quickstart sample must be ingestable from any install method."""
 
     def test_quickstart_phase6_ingests_embedded_sample(self, monkeypatch, tmp_path, capsys):
-        """Drive cmd_quickstart() through Phase 6 and verify a session is stored."""
+        """Drive cmd_quickstart() from a wheel-like location (no examples/ dir)
+        and verify the embedded sample is used, not a file-based lookup."""
+        import dreamcatcher.__main__ as main_mod
         from dreamcatcher.__main__ import cmd_quickstart
 
         cfg = DreamcatcherConfig()
@@ -61,6 +63,13 @@ class TestEmbeddedSampleTranscript:
         cfg.sessions_dir = str(tmp_path / "data" / "sessions")
         cfg.training_dir = str(tmp_path / "data" / "training")
         cfg.models_dir = str(tmp_path / "data" / "models")
+
+        # Simulate wheel install: __file__ points to a location without examples/
+        fake_pkg = tmp_path / "fake_site_packages" / "dreamcatcher"
+        fake_pkg.mkdir(parents=True)
+        (fake_pkg / "__main__.py").touch()
+        # No examples/ directory exists under fake_site_packages/
+        monkeypatch.setattr(main_mod, "__file__", str(fake_pkg / "__main__.py"))
 
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr("dreamcatcher.__main__.sys.version_info", (3, 12, 0))
