@@ -34,9 +34,13 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 # Load .env before anything reads os.environ
+# Try cwd first (source checkout), then ~/.dreamcatcher/.env (wheel install)
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv()  # cwd/.env
+    _home_env = Path.home() / ".dreamcatcher" / ".env"
+    if _home_env.exists():
+        load_dotenv(_home_env, override=False)  # Don't override cwd values
 except ImportError:
     pass  # python-dotenv is optional; users can export vars manually
 

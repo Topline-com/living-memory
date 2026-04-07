@@ -13,6 +13,7 @@ pipeline failed), recent untrained memories are injected as structured
 context alongside the model's parametric output.
 """
 import json
+import os
 import time
 import threading
 from datetime import datetime, timezone
@@ -33,7 +34,8 @@ _config = None
 _db = None
 _collector = None
 _teams: TeamMemoryManager = None
-_team_models: dict = {}  # team_id -> (model, tokenizer, backend)
+_team_models: dict = {}  # team_id -> (model, tokenizer, backend, path)
+_team_model_locks: dict = {}  # team_id -> threading.Lock
 
 
 def _load_model(config: DreamcatcherConfig):
@@ -704,58 +706,71 @@ def _search_db(query: str, limit: int = 10) -> list[dict]:
     ]
 
 
+def _get_team_model_lock(team_id: str) -> threading.Lock:
+    """Get or create a per-team lock for model loading."""
+    if team_id not in _team_model_locks:
+        _team_model_locks[team_id] = threading.Lock()
+    return _team_model_locks[team_id]
+
+
 def _get_team_model(team_id: str) -> tuple:
     """Load and cache a team's trained model. Returns (model, tokenizer, backend) or (None, None, None).
 
-    Cache is invalidated when:
-    - No model was cached (negative results are never cached so new models are detected)
-    - The models/current symlink points to a different path than what was cached (nightly retrained)
+    Thread-safe: a per-team lock prevents concurrent cold-starts from
+    loading the same multi-GB model twice and doubling peak memory.
     """
     cfg = _teams.get_config(team_id)
     current_model = Path(cfg.models_dir) / "current"
 
     if not current_model.exists():
-        # Don't cache negative results — model may appear after nightly training
         return (None, None, None)
 
     model_path = current_model.resolve()
 
-    # Check if we have a cached model and it's still the same path
+    # Fast path: check cache without lock
     if team_id in _team_models:
         cached_model, cached_tok, cached_backend, cached_path = _team_models[team_id]
         if str(model_path) == cached_path:
             return (cached_model, cached_tok, cached_backend)
-        # Model path changed (nightly retrained) — reload below
 
-    # Try MLX first
-    adapter_config = model_path / "adapter_config.json"
-    if adapter_config.exists():
+    # Slow path: acquire lock, re-check, then load
+    lock = _get_team_model_lock(team_id)
+    with lock:
+        # Re-check after acquiring lock (another thread may have loaded it)
+        if team_id in _team_models:
+            cached_model, cached_tok, cached_backend, cached_path = _team_models[team_id]
+            if str(model_path) == cached_path:
+                return (cached_model, cached_tok, cached_backend)
+
+        # Try MLX first
+        adapter_config = model_path / "adapter_config.json"
+        if adapter_config.exists():
+            try:
+                with open(adapter_config) as f:
+                    acfg = json.load(f)
+                base_model = acfg.get("model", cfg.model.name)
+                from mlx_lm import load as mlx_load
+                model, tokenizer = mlx_load(base_model, adapter_path=str(model_path))
+                _team_models[team_id] = (model, tokenizer, "mlx", str(model_path))
+                return (model, tokenizer, "mlx")
+            except Exception:
+                pass
+
+        # Try PyTorch
         try:
-            with open(adapter_config) as f:
-                acfg = json.load(f)
-            base_model = acfg.get("model", cfg.model.name)
-            from mlx_lm import load as mlx_load
-            model, tokenizer = mlx_load(base_model, adapter_path=str(model_path))
-            _team_models[team_id] = (model, tokenizer, "mlx", str(model_path))
-            return (model, tokenizer, "mlx")
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+            tokenizer = AutoTokenizer.from_pretrained(str(model_path))
+            model = AutoModelForCausalLM.from_pretrained(
+                str(model_path), torch_dtype=torch.float16, device_map="auto",
+            )
+            model.eval()
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+            _team_models[team_id] = (model, tokenizer, "pytorch", str(model_path))
+            return (model, tokenizer, "pytorch")
         except Exception:
-            pass
-
-    # Try PyTorch
-    try:
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(str(model_path))
-        model = AutoModelForCausalLM.from_pretrained(
-            str(model_path), torch_dtype=torch.float16, device_map="auto",
-        )
-        model.eval()
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        _team_models[team_id] = (model, tokenizer, "pytorch", str(model_path))
-        return (model, tokenizer, "pytorch")
-    except Exception:
-        return (None, None, None)
+            return (None, None, None)
 
 
 def _generate_with(model, tokenizer, backend: str, query: str, max_tokens: int = 256) -> str:
@@ -819,4 +834,6 @@ def run_server(config_path: str = "config.yaml"):
     import uvicorn
     config = DreamcatcherConfig.load(config_path)
     app = create_app(config)
-    uvicorn.run(app, host=config.server.host, port=config.server.port, log_level="info")
+    # DREAMCATCHER_HOST env var overrides config (used by Docker to bind 0.0.0.0)
+    host = os.environ.get("DREAMCATCHER_HOST", config.server.host)
+    uvicorn.run(app, host=host, port=config.server.port, log_level="info")
