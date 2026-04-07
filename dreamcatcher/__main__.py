@@ -253,14 +253,23 @@ def cmd_setup(config):
         print()
         print("Available integrations:")
         print("  claude-code    Configure Claude Code MCP integration")
+        print("  paperclip      Create Paperclip routine for nightly training")
+        print("  hermes         Create Hermes cron job for nightly training")
+        print("  openclaw       Create OpenClaw cron job for nightly training")
         sys.exit(1)
 
     target = sys.argv[2]
-    if target == "claude-code":
-        _setup_claude_code(config)
+    setup_map = {
+        "claude-code": _setup_claude_code,
+        "paperclip": _setup_paperclip,
+        "hermes": _setup_hermes,
+        "openclaw": _setup_openclaw,
+    }
+    if target in setup_map:
+        setup_map[target](config)
     else:
         print(f"Unknown integration: {target}")
-        print("Available: claude-code")
+        print("Available: claude-code, paperclip, hermes, openclaw")
         sys.exit(1)
 
 
@@ -417,6 +426,191 @@ def _setup_claude_code(config):
     print(f"    • Inject personal memory context into every session")
     print(f"    • Provide living_memory_recall for on-demand memory queries")
     print(f"    • Auto-save conversations for nightly memory training")
+    print()
+
+
+def _setup_paperclip(config):
+    """Create a Paperclip routine for nightly memory training."""
+    args = sys.argv[3:]
+    paperclip_url = "http://localhost:3000"
+    company_id = None
+    agent_id = None
+    server_url = "http://localhost:8420"
+
+    for i, arg in enumerate(args):
+        if arg == "--url" and i + 1 < len(args):
+            paperclip_url = args[i + 1]
+        elif arg == "--company" and i + 1 < len(args):
+            company_id = args[i + 1]
+        elif arg == "--agent" and i + 1 < len(args):
+            agent_id = args[i + 1]
+        elif arg == "--server-url" and i + 1 < len(args):
+            server_url = args[i + 1]
+
+    if not company_id or not agent_id:
+        print("Usage: dreamcatcher setup paperclip --company <id> --agent <id> [--url <paperclip-url>]")
+        sys.exit(1)
+
+    print(f"\n  Living Memory — Paperclip Setup")
+    print(f"  {'─'*40}")
+
+    try:
+        import httpx
+        api = paperclip_url.rstrip("/")
+
+        # Create the routine
+        print(f"\n  Creating nightly routine in Paperclip...")
+        resp = httpx.post(f"{api}/api/companies/{company_id}/routines", json={
+            "title": "Living Memory Nightly",
+            "description": "Extract memories, build training set, and re-fine-tune the team memory model.",
+            "assigneeAgentId": agent_id,
+            "status": "active",
+            "concurrencyPolicy": "skip_if_active",
+            "catchUpPolicy": "skip_missed",
+        }, timeout=10.0)
+        resp.raise_for_status()
+        routine = resp.json()
+        routine_id = routine.get("id")
+        print(f"  ✓ Routine created: {routine_id}")
+
+        # Add schedule trigger
+        print(f"  Adding 3 AM schedule trigger...")
+        resp = httpx.post(f"{api}/api/routines/{routine_id}/triggers", json={
+            "kind": "schedule",
+            "cronExpression": "0 3 * * *",
+            "timezone": "America/New_York",
+            "enabled": True,
+        }, timeout=10.0)
+        resp.raise_for_status()
+        print(f"  ✓ Schedule trigger added (3 AM daily)")
+
+        print(f"\n  Setup complete!")
+        print(f"  The routine will appear in Paperclip's Routines UI.")
+        print(f"  Make sure the Living Memory server is running at {server_url}")
+        print()
+
+    except ImportError:
+        print("  Error: httpx not installed. Run: pip install httpx")
+        sys.exit(1)
+    except Exception as e:
+        print(f"  Error: {e}")
+        print(f"  Make sure Paperclip is running at {paperclip_url}")
+        sys.exit(1)
+
+
+def _setup_hermes(config):
+    """Create a Hermes cron job for nightly memory training."""
+    args = sys.argv[3:]
+    server_url = "http://localhost:8420"
+    hermes_home = os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))
+
+    for i, arg in enumerate(args):
+        if arg == "--server-url" and i + 1 < len(args):
+            server_url = args[i + 1]
+        elif arg == "--hermes-home" and i + 1 < len(args):
+            hermes_home = args[i + 1]
+
+    print(f"\n  Living Memory — Hermes Setup")
+    print(f"  {'─'*40}")
+
+    cron_dir = Path(hermes_home) / "cron"
+    cron_dir.mkdir(parents=True, exist_ok=True)
+    jobs_path = cron_dir / "jobs.json"
+
+    # Load existing jobs
+    jobs = []
+    if jobs_path.exists():
+        with open(jobs_path) as f:
+            jobs = json.load(f)
+
+    # Remove any existing living-memory job
+    jobs = [j for j in jobs if j.get("id") != "living-memory-nightly"]
+
+    # Add the new job
+    jobs.append({
+        "id": "living-memory-nightly",
+        "name": "Living Memory Nightly",
+        "prompt": f"Run the Living Memory nightly pipeline. POST to {server_url}/nightly to trigger extraction, training, and deployment.",
+        "schedule": "0 3 * * *",
+        "skills": [],
+        "enabled": True,
+    })
+
+    with open(jobs_path, "w") as f:
+        json.dump(jobs, f, indent=2)
+        f.write("\n")
+
+    print(f"\n  ✓ Cron job created: living-memory-nightly")
+    print(f"    Schedule: 0 3 * * * (3 AM daily)")
+    print(f"    Config: {jobs_path}")
+    print(f"\n  View with: hermes cron list")
+    print(f"  Make sure the Living Memory server is running at {server_url}")
+    print()
+
+
+def _setup_openclaw(config):
+    """Create an OpenClaw cron job for nightly memory training."""
+    import shutil
+    args = sys.argv[3:]
+    server_url = "http://localhost:8420"
+    openclaw_home = os.environ.get("OPENCLAW_HOME", str(Path.home() / ".openclaw"))
+
+    for i, arg in enumerate(args):
+        if arg == "--server-url" and i + 1 < len(args):
+            server_url = args[i + 1]
+        elif arg == "--openclaw-home" and i + 1 < len(args):
+            openclaw_home = args[i + 1]
+
+    print(f"\n  Living Memory — OpenClaw Setup")
+    print(f"  {'─'*40}")
+
+    # Try CLI first
+    openclaw_bin = shutil.which("openclaw")
+    if openclaw_bin:
+        import subprocess
+        print(f"\n  Creating cron job via OpenClaw CLI...")
+        result = subprocess.run([
+            openclaw_bin, "cron", "add",
+            "--name", "Living Memory Nightly",
+            "--cron", "0 3 * * *",
+            "--session", "isolated",
+            "--message", f"Run the Living Memory nightly pipeline. POST to {server_url}/nightly to trigger extraction, training, and deployment.",
+        ], capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"  ✓ Cron job created via CLI")
+            print(f"\n  View with: openclaw cron list")
+            print()
+            return
+
+    # Fallback: write directly to jobs.json
+    cron_dir = Path(openclaw_home) / "cron"
+    cron_dir.mkdir(parents=True, exist_ok=True)
+    jobs_path = cron_dir / "jobs.json"
+
+    jobs = []
+    if jobs_path.exists():
+        with open(jobs_path) as f:
+            jobs = json.load(f)
+
+    jobs = [j for j in jobs if j.get("name") != "Living Memory Nightly"]
+
+    jobs.append({
+        "name": "Living Memory Nightly",
+        "message": f"Run the Living Memory nightly pipeline. POST to {server_url}/nightly to trigger extraction, training, and deployment.",
+        "cron": "0 3 * * *",
+        "session": "isolated",
+        "enabled": True,
+    })
+
+    with open(jobs_path, "w") as f:
+        json.dump(jobs, f, indent=2)
+        f.write("\n")
+
+    print(f"\n  ✓ Cron job created: Living Memory Nightly")
+    print(f"    Schedule: 0 3 * * * (3 AM daily)")
+    print(f"    Config: {jobs_path}")
+    print(f"\n  View with: openclaw cron list")
+    print(f"  Make sure the Living Memory server is running at {server_url}")
     print()
 
 

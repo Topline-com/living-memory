@@ -346,6 +346,63 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
     async def stats():
         return _db.stats() if _db else {}
 
+    # ── Nightly trigger endpoints ──────────────────────────────
+
+    @app.post("/nightly")
+    async def trigger_nightly():
+        """Trigger the full nightly pipeline via HTTP. Returns immediately."""
+        import threading
+
+        def _run_nightly():
+            import asyncio as _aio
+            from .collector import SessionCollector as _SC, TrainingDataBuilder as _TDB
+            from .trainer import MemoryTrainer as _MT
+            try:
+                # Personal pipeline
+                collector = _SC(config)
+                _aio.run(collector.extract_memories())
+                builder = _TDB(config)
+                data = builder.build_training_set()
+                if data:
+                    _MT(config).train()
+                # Team pipelines
+                for tid in _teams.list_teams():
+                    tcfg = _teams.get_config(tid)
+                    tcfg.ensure_dirs()
+                    tc = _SC(tcfg)
+                    _aio.run(tc.extract_memories())
+                    tb = _TDB(tcfg)
+                    if tb.build_training_set():
+                        _MT(tcfg).train()
+            except Exception as e:
+                print(f"  Nightly pipeline error: {e}")
+
+        threading.Thread(target=_run_nightly, daemon=True).start()
+        return {"status": "started", "message": "Nightly pipeline triggered in background"}
+
+    @app.post("/teams/{team_id}/nightly")
+    async def trigger_team_nightly(team_id: str):
+        """Trigger nightly pipeline for a specific team. Returns immediately."""
+        import threading
+
+        def _run_team():
+            import asyncio as _aio
+            from .collector import SessionCollector as _SC, TrainingDataBuilder as _TDB
+            from .trainer import MemoryTrainer as _MT
+            try:
+                tcfg = _teams.get_config(team_id)
+                tcfg.ensure_dirs()
+                tc = _SC(tcfg)
+                _aio.run(tc.extract_memories())
+                tb = _TDB(tcfg)
+                if tb.build_training_set():
+                    _MT(tcfg).train()
+            except Exception as e:
+                print(f"  Team nightly error ({team_id}): {e}")
+
+        threading.Thread(target=_run_team, daemon=True).start()
+        return {"team_id": team_id, "status": "started"}
+
     # ── Team-scoped endpoints ──────────────────────────────────
 
     @app.post("/teams/{team_id}/ingest")

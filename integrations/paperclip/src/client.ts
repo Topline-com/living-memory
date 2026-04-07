@@ -160,6 +160,14 @@ export class LivingMemoryClient {
     return this.request<HealthStatus>(`/teams/${teamId}/health`);
   }
 
+  async triggerNightly(): Promise<{ status: string }> {
+    return this.request<{ status: string }>("/nightly", { method: "POST" });
+  }
+
+  async triggerTeamNightly(teamId: string): Promise<{ team_id: string; status: string }> {
+    return this.request(`/teams/${teamId}/nightly`, { method: "POST" });
+  }
+
   async healthCheck(): Promise<boolean> {
     try {
       const resp = await fetch(`${this.baseUrl}/health`, {

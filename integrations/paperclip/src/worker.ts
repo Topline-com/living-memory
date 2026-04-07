@@ -259,12 +259,17 @@ export async function setup(ctx: PluginContext): Promise<void> {
     key: JOB_NIGHTLY,
     schedule: "0 3 * * *", // 3 AM daily
     handle: async () => {
-      // The Living Memory nightly pipeline (dreamcatcher nightly) handles
-      // the actual extraction + training. This job serves as an audit log
-      // entry and could be extended to trigger the pipeline via API.
-      ctx.activity.log("memory.nightly_triggered", {
-        timestamp: new Date().toISOString(),
-      });
+      try {
+        await client.triggerNightly();
+        ctx.activity.log("memory.nightly_triggered", {
+          timestamp: new Date().toISOString(),
+          status: "started",
+        });
+      } catch (err) {
+        ctx.activity.log("memory.nightly_trigger_failed", {
+          timestamp: new Date().toISOString(),
+          error: String(err),
+        });
     },
   });
 }
