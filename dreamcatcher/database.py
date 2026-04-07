@@ -54,6 +54,7 @@ class MemoryDB:
                     content TEXT NOT NULL,
                     confidence REAL DEFAULT 1.0,
                     created_at TEXT NOT NULL,
+                    last_seen_at TEXT,
                     superseded_by TEXT,
                     active INTEGER DEFAULT 1
                 );
@@ -89,11 +90,15 @@ class MemoryDB:
                 CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(active);
                 CREATE INDEX IF NOT EXISTS idx_training_created ON training_examples(created_at);
             """)
-            # Migration for existing databases
+            # Migrations for existing databases
             try:
                 conn.execute("SELECT pair_index FROM training_examples LIMIT 1")
             except sqlite3.OperationalError:
                 conn.execute("ALTER TABLE training_examples ADD COLUMN pair_index INTEGER DEFAULT 0")
+            try:
+                conn.execute("SELECT last_seen_at FROM memories LIMIT 1")
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE memories ADD COLUMN last_seen_at TEXT")
 
     # ── Sessions ────────────────────────────────────────────────
 
@@ -130,10 +135,16 @@ class MemoryDB:
         memory_id = hashlib.sha256(f"{category}:{content}".encode()).hexdigest()[:16]
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
+            # INSERT OR IGNORE preserves original session_id/created_at provenance.
+            # On re-encounter, only last_seen_at and confidence are refreshed.
             conn.execute(
-                "INSERT OR REPLACE INTO memories (id, session_id, category, content, confidence, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (memory_id, session_id, category, content, confidence, now)
+                "INSERT OR IGNORE INTO memories (id, session_id, category, content, confidence, created_at, last_seen_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (memory_id, session_id, category, content, confidence, now, now)
+            )
+            conn.execute(
+                "UPDATE memories SET last_seen_at = ?, confidence = MAX(confidence, ?) WHERE id = ?",
+                (now, confidence, memory_id)
             )
         return memory_id
 
@@ -165,8 +176,9 @@ class MemoryDB:
         example_id = hashlib.sha256(f"{instruction}:{response}".encode()).hexdigest()[:16]
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
+            # INSERT OR IGNORE preserves original created_at provenance.
             conn.execute(
-                "INSERT OR REPLACE INTO training_examples "
+                "INSERT OR IGNORE INTO training_examples "
                 "(id, memory_ids, instruction, response, category, pair_index, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (example_id, json.dumps(memory_ids or []), instruction, response,

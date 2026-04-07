@@ -56,9 +56,22 @@ class DreamcatcherConfig:
 
     @classmethod
     def load(cls, config_path: str = "config.yaml") -> "DreamcatcherConfig":
-        path = Path(config_path)
+        # Resolve config path relative to this file so the CLI works from any cwd
+        config_path_obj = Path(config_path)
+        if not config_path_obj.is_absolute():
+            # First try relative to cwd (explicit path), then fall back to package dir
+            if not config_path_obj.exists():
+                config_path_obj = Path(__file__).parent.parent / config_path
+        path = config_path_obj
         raw = yaml.safe_load(open(path)) if path.exists() else {}
+        # Anchor for resolving relative data paths: directory containing config.yaml
+        base_dir = path.parent.resolve() if path.exists() else Path(__file__).parent.parent.resolve()
         cfg = cls()
+        # Resolve default relative paths against base_dir so they work from any cwd
+        for attr in ("db_path", "sessions_dir", "training_dir", "models_dir"):
+            val = getattr(cfg, attr)
+            if not Path(val).is_absolute():
+                setattr(cfg, attr, str((base_dir / val).resolve()))
         if "model" in raw:
             cfg.model = ModelConfig(**{k: v for k, v in raw["model"].items()
                                        if k in ModelConfig.__dataclass_fields__})
@@ -74,7 +87,10 @@ class DreamcatcherConfig:
         if "paths" in raw:
             for attr in ("db_path", "sessions_dir", "training_dir", "models_dir"):
                 if attr in raw["paths"]:
-                    setattr(cfg, attr, raw["paths"][attr])
+                    val = raw["paths"][attr]
+                    if not Path(val).is_absolute():
+                        val = str((base_dir / val).resolve())
+                    setattr(cfg, attr, val)
         return cfg
 
     def ensure_dirs(self):

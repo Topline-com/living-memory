@@ -184,13 +184,19 @@ class SessionCollector:
                         pair_index=pair_idx,  # 0 = semantic (broadest), kept during compression
                     )
 
-            self.db.mark_session_processed(session["id"])
-            n_pairs = sum(
-                len(m.get("training_pairs", {})) if isinstance(m.get("training_pairs", {}), dict)
-                else len(m.get("training_pairs", []))
-                for m in memories
-            )
-            print(f"    → {len(memories)} memories, {n_pairs} training pairs")
+            if memories is None:
+                print(f"    → extraction failed, session will be retried next run")
+            elif memories:
+                self.db.mark_session_processed(session["id"])
+                n_pairs = sum(
+                    len(m.get("training_pairs", {})) if isinstance(m.get("training_pairs", {}), dict)
+                    else len(m.get("training_pairs", []))
+                    for m in memories
+                )
+                print(f"    → {len(memories)} memories, {n_pairs} training pairs")
+            else:
+                self.db.mark_session_processed(session["id"])
+                print(f"    → no memories to extract, session marked done")
 
         return all_memories
 
@@ -203,12 +209,14 @@ class SessionCollector:
         provider = self.config.extraction.provider if hasattr(self.config, 'extraction') else "anthropic"
         provider = os.environ.get("DREAMCATCHER_PROVIDER", provider)
         try:
+            if provider == "openrouter":
+                return await self._call_openrouter(user_msg)
             if provider == "openai":
                 return await self._call_openai(user_msg)
             return await self._call_anthropic(user_msg)
         except Exception as e:
             print(f"    ERROR: {e}")
-            return []
+            return None  # None = failure (retry); [] = successful empty (no memories worth extracting)
 
     async def _call_anthropic(self, user_msg: str) -> list[dict]:
         import anthropic
@@ -225,11 +233,38 @@ class SessionCollector:
             text = text.split("\n", 1)[1].rsplit("```", 1)[0]
         return json.loads(text)
 
+    async def _call_openrouter(self, user_msg: str) -> list[dict]:
+        from openai import AsyncOpenAI
+        model = self.config.extraction.model if hasattr(self.config, 'extraction') else "anthropic/claude-sonnet-4-5"
+        api_key = os.environ.get("OPENROUTER_API_KEY")
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY not set")
+        client = AsyncOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key,
+        )
+        response = await client.chat.completions.create(
+            model=model,
+            max_tokens=8192,
+            messages=[
+                {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
+        )
+        text = response.choices[0].message.content.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1].rsplit("```", 1)[0]
+        result = json.loads(text)
+        if isinstance(result, dict) and "memories" in result:
+            return result["memories"]
+        return result if isinstance(result, list) else []
+
     async def _call_openai(self, user_msg: str) -> list[dict]:
         from openai import AsyncOpenAI
+        model = self.config.extraction.model if hasattr(self.config, 'extraction') else "gpt-4o-mini"
         client = AsyncOpenAI()
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=model,
             max_tokens=8192,
             messages=[
                 {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
