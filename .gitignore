@@ -8,6 +8,9 @@ data/
 __pycache__/
 *.pyc
 *.pyo
+# macOS Finder duplicate files
+* 2.py
+* 2.ts
 *.egg-info/
 dreamcatcher_memory.egg-info/
 dist/
