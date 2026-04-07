@@ -38,7 +38,7 @@ class ExtractionConfig:
 
 @dataclass
 class ServerConfig:
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8420
     stale_model_threshold_hours: float = 36.0
 

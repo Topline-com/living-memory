@@ -72,11 +72,10 @@ def _load_model(config: DreamcatcherConfig):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        _tokenizer = AutoTokenizer.from_pretrained(str(model_path), trust_remote_code=True)
+        _tokenizer = AutoTokenizer.from_pretrained(str(model_path))
         _model = AutoModelForCausalLM.from_pretrained(
             str(model_path),
             torch_dtype=torch.float16,
-            trust_remote_code=True,
             device_map="auto",
         )
         _model.eval()
@@ -241,19 +240,15 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
                 all_memories.extend(_parse_memories(raw))
             source = "model"
 
-        # Also pull from database
+        # Also pull query-relevant memories from database
         if _db:
-            db_mems = _db.get_active_memories(limit=50)
-            for m in db_mems:
-                all_memories.append({
-                    "category": m["category"],
-                    "content": m["content"],
-                    "confidence": m.get("confidence", 1.0),
-                })
-            if source == "model":
-                source = "hybrid"
-            else:
-                source = "database"
+            db_mems = _search_db(req.query, limit=20)
+            if db_mems:
+                all_memories.extend(db_mems)
+                if source == "model":
+                    source = "hybrid"
+                else:
+                    source = "database"
 
         # ── Disaster Recovery: Delta Context Injection ─────────────
         # If the deployed model is stale (>24h since last training),

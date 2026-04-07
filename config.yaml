@@ -50,7 +50,7 @@ dedup:
 
 # Inference server (runs on-device)
 server:
-  host: "0.0.0.0"
+  host: "127.0.0.1"  # Localhost only; set to "0.0.0.0" to expose on network
   port: 8420
   stale_model_threshold_hours: 36  # Delta injection activates after this many hours
 

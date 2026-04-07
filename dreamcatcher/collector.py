@@ -137,6 +137,11 @@ class SessionCollector:
         for session in sessions:
             print(f"  Extracting from session {session['id']}...")
             memories = await self._call_extraction_llm(session)
+
+            if memories is None:
+                print(f"    → extraction failed, session will be retried next run")
+                continue
+
             all_memories.extend(memories)
 
             # Store each memory and its training pairs
@@ -184,9 +189,7 @@ class SessionCollector:
                         pair_index=pair_idx,  # 0 = semantic (broadest), kept during compression
                     )
 
-            if memories is None:
-                print(f"    → extraction failed, session will be retried next run")
-            elif memories:
+            if memories:
                 self.db.mark_session_processed(session["id"])
                 n_pairs = sum(
                     len(m.get("training_pairs", {})) if isinstance(m.get("training_pairs", {}), dict)

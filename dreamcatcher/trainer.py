@@ -398,16 +398,19 @@ class MemoryTrainer:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
+        # Only trust remote code for known model families that require it
+        TRUSTED_REMOTE_CODE_PREFIXES = ("Qwen/", "google/gemma")
         models_to_try = [self.config.model.name] + (self.config.model.fallbacks or [])
 
         for name in models_to_try:
             try:
+                needs_remote_code = any(name.startswith(p) for p in TRUSTED_REMOTE_CODE_PREFIXES)
                 print(f"  Loading base model: {name}")
-                tokenizer = AutoTokenizer.from_pretrained(name, trust_remote_code=True)
+                tokenizer = AutoTokenizer.from_pretrained(name, trust_remote_code=needs_remote_code)
                 model = AutoModelForCausalLM.from_pretrained(
                     name,
                     torch_dtype=torch.float16 if self.config.training.fp16 else torch.float32,
-                    trust_remote_code=True,
+                    trust_remote_code=needs_remote_code,
                     device_map="auto",
                 )
                 if tokenizer.pad_token is None:

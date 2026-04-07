@@ -292,7 +292,7 @@ def _setup_claude_code(config):
     if sys.platform == "darwin":
         mcp_entry = {
             "command": "/bin/bash",
-            "args": ["-c", f"cd {project_dir} && exec {dc_cmd}"],
+            "args": ["-c", f"cd '{project_dir}' && exec {dc_cmd}"],
             "env": {
                 "DREAMCATCHER_SERVER_URL": server_url,
             },

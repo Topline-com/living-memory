@@ -206,14 +206,32 @@ class MemoryDB:
         """
         cutoff = (datetime.now(timezone.utc) - timedelta(days=compression_age_days)).isoformat()
         with self._conn() as conn:
+            # Build sets to filter training examples whose source memories were superseded
+            active_ids = {row[0] for row in conn.execute(
+                "SELECT id FROM memories WHERE active = 1").fetchall()}
+            inactive_ids = {row[0] for row in conn.execute(
+                "SELECT id FROM memories WHERE active = 0").fetchall()}
+
+            def _has_active_source(example: dict) -> bool:
+                """Exclude example only if ALL its source memories are known-inactive."""
+                ids = json.loads(example.get("memory_ids", "[]"))
+                if not ids:
+                    return True  # No source tracking — keep
+                known = [mid for mid in ids if mid in active_ids or mid in inactive_ids]
+                if not known:
+                    return True  # IDs don't match any memory — keep (legacy data)
+                return any(mid in active_ids for mid in known)
+
             # Recent: full episodic density
             recent = [dict(r) for r in conn.execute(
                 "SELECT * FROM training_examples WHERE created_at >= ? ORDER BY created_at",
                 (cutoff,)).fetchall()]
+            recent = [e for e in recent if _has_active_source(e)]
             # Old: semantic density only (most general pairs)
             old_included = [dict(r) for r in conn.execute(
                 "SELECT * FROM training_examples WHERE created_at < ? AND pair_index <= ? ORDER BY created_at",
                 (cutoff, max_pair_index_old)).fetchall()]
+            old_included = [e for e in old_included if _has_active_source(e)]
             # Stats
             old_total = conn.execute(
                 "SELECT COUNT(*) FROM training_examples WHERE created_at < ?",
