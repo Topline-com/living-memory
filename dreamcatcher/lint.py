@@ -242,9 +242,12 @@ Respond ONLY with a JSON array of findings. If no issues found, respond with [].
 Facts to review:
 {facts_text}"""
 
-        provider = os.environ.get("DREAMCATCHER_PROVIDER", "anthropic")
+        configured_provider = self.config.extraction.provider if hasattr(self.config, 'extraction') else "openrouter"
+        provider = os.environ.get("DREAMCATCHER_PROVIDER", configured_provider)
         try:
-            if provider == "openai":
+            if provider == "openrouter":
+                findings = self._call_openrouter_lint(prompt)
+            elif provider == "openai":
                 findings = self._call_openai_lint(prompt)
             else:
                 findings = self._call_anthropic_lint(prompt)
@@ -296,6 +299,27 @@ Facts to review:
             return result
         if isinstance(result, dict) and "findings" in result:
             return result["findings"]
+        return []
+
+    def _call_openrouter_lint(self, prompt: str) -> list:
+        """Call OpenRouter API for lint analysis."""
+        from openai import OpenAI
+        model = self.config.extraction.model if hasattr(self.config, 'extraction') else "minimax/minimax-m2.7"
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.environ.get("OPENROUTER_API_KEY", ""),
+        )
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = response.choices[0].message.content.strip()
+        if text.startswith("["):
+            return json.loads(text)
+        import re
+        match = re.search(r'\[.*\]', text, re.DOTALL)
+        if match:
+            return json.loads(match.group())
         return []
 
     # ══════════════════════════════════════════════════════════════

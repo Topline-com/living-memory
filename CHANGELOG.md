@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **13 new tests** in `test_teams.py` covering team isolation, cross-agent sharing, config scoping, and collector wiring.
 
 ### Fixed
-- **OpenRouter default broke fresh installs** — Reverted default extraction provider to Anthropic. OpenRouter now documented as opt-in with `OPENROUTER_API_KEY`.
+- **OpenRouter default fully wired** — Default extraction provider is now OpenRouter with `openai` as a core dependency. Anthropic available as opt-in (`pip install dreamcatcher-memory[anthropic]`).
 - **`lstrip('./')` mangled parent paths** — Replaced with proper `Path` resolution that preserves `../` semantics in config paths.
 - **Empty extractions retried forever** — Extraction failures (`None`) now distinguished from successful-empty results (`[]`); boring sessions marked done.
 - **`INSERT OR REPLACE` overwrote provenance** — Changed to `INSERT OR IGNORE` + `UPDATE` for memories; added `last_seen_at` column with migration.

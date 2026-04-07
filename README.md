@@ -27,7 +27,7 @@ cd living-memory
 pip install .
 
 # For training on Apple Silicon (Mac M1/M2/M3/M4 — recommended):
-pip install mlx anthropic
+pip install mlx
 # mlx-lm >=0.31.2 required for Gemma 4 support. Install from main until PyPI catches up:
 pip install git+https://github.com/ml-explore/mlx-lm.git
 
@@ -38,9 +38,10 @@ pip install -e ".[train]"
 ### 2. Configure
 
 ```bash
-# Copy the example env file and add your Anthropic API key
+# Copy the example env file and add your OpenRouter API key
 cp .env.example .env
-# Edit .env and set ANTHROPIC_API_KEY=sk-ant-...
+# Edit .env and set OPENROUTER_API_KEY=sk-or-...
+# Get a key at https://openrouter.ai/keys
 # This key is ONLY used during nightly extraction (~$0.01-0.05/night).
 ```
 
