@@ -14,6 +14,7 @@ context alongside the model's parametric output.
 """
 import json
 import time
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -348,16 +349,21 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
 
     # ── Nightly trigger endpoints ──────────────────────────────
 
+    _nightly_lock = threading.Lock()
+    _team_nightly_locks: dict[str, threading.Lock] = {}
+
     @app.post("/nightly")
     async def trigger_nightly():
         """Trigger the full nightly pipeline via HTTP. Returns immediately."""
-        import threading
+        if not _nightly_lock.acquire(blocking=False):
+            return {"status": "already_running", "message": "Nightly pipeline is already in progress"}
 
         def _run_nightly():
-            import asyncio as _aio
-            from .collector import SessionCollector as _SC, TrainingDataBuilder as _TDB
-            from .trainer import MemoryTrainer as _MT
+            global _model, _tokenizer, _backend
             try:
+                import asyncio as _aio
+                from .collector import SessionCollector as _SC, TrainingDataBuilder as _TDB
+                from .trainer import MemoryTrainer as _MT
                 # Personal pipeline
                 collector = _SC(config)
                 _aio.run(collector.extract_memories())
@@ -365,6 +371,8 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
                 data = builder.build_training_set()
                 if data:
                     _MT(config).train()
+                    # Reload the personal model so live recall reflects new training
+                    _load_model(config)
                 # Team pipelines
                 for tid in _teams.list_teams():
                     tcfg = _teams.get_config(tid)
@@ -374,8 +382,12 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
                     tb = _TDB(tcfg)
                     if tb.build_training_set():
                         _MT(tcfg).train()
+                        # Invalidate cached team model so next request reloads
+                        _team_models.pop(tid, None)
             except Exception as e:
                 print(f"  Nightly pipeline error: {e}")
+            finally:
+                _nightly_lock.release()
 
         threading.Thread(target=_run_nightly, daemon=True).start()
         return {"status": "started", "message": "Nightly pipeline triggered in background"}
@@ -383,13 +395,16 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
     @app.post("/teams/{team_id}/nightly")
     async def trigger_team_nightly(team_id: str):
         """Trigger nightly pipeline for a specific team. Returns immediately."""
-        import threading
+        if team_id not in _team_nightly_locks:
+            _team_nightly_locks[team_id] = threading.Lock()
+        if not _team_nightly_locks[team_id].acquire(blocking=False):
+            return {"team_id": team_id, "status": "already_running"}
 
         def _run_team():
-            import asyncio as _aio
-            from .collector import SessionCollector as _SC, TrainingDataBuilder as _TDB
-            from .trainer import MemoryTrainer as _MT
             try:
+                import asyncio as _aio
+                from .collector import SessionCollector as _SC, TrainingDataBuilder as _TDB
+                from .trainer import MemoryTrainer as _MT
                 tcfg = _teams.get_config(team_id)
                 tcfg.ensure_dirs()
                 tc = _SC(tcfg)
@@ -397,8 +412,12 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
                 tb = _TDB(tcfg)
                 if tb.build_training_set():
                     _MT(tcfg).train()
+                    # Invalidate cached team model so next request reloads
+                    _team_models.pop(team_id, None)
             except Exception as e:
                 print(f"  Team nightly error ({team_id}): {e}")
+            finally:
+                _team_nightly_locks[team_id].release()
 
         threading.Thread(target=_run_team, daemon=True).start()
         return {"team_id": team_id, "status": "started"}
