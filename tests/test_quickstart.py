@@ -52,18 +52,36 @@ class TestConfigFallbackPath:
 class TestEmbeddedSampleTranscript:
     """The quickstart sample must be ingestable from any install method."""
 
-    def test_sample_transcript_ingests(self, config):
-        """Embedded sample transcript should produce a valid session."""
-        from dreamcatcher.collector import SessionCollector
-        sample = (
-            "User: I'm working on a project called Horizon — it's a real-time analytics "
-            "dashboard for our SaaS product. We're using React on the frontend and FastAPI "
-            "on the backend. The launch target is end of Q2."
-        )
-        collector = SessionCollector(config)
-        sid = collector.ingest_text(sample, "quickstart-demo")
-        assert sid is not None
-        db = MemoryDB(config.db_path)
+    def test_quickstart_phase6_ingests_embedded_sample(self, monkeypatch, tmp_path, capsys):
+        """Drive cmd_quickstart() through Phase 6 and verify a session is stored."""
+        from dreamcatcher.__main__ import cmd_quickstart
+
+        cfg = DreamcatcherConfig()
+        cfg.db_path = str(tmp_path / "data" / "memory.db")
+        cfg.sessions_dir = str(tmp_path / "data" / "sessions")
+        cfg.training_dir = str(tmp_path / "data" / "training")
+        cfg.models_dir = str(tmp_path / "data" / "models")
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("dreamcatcher.__main__.sys.version_info", (3, 12, 0))
+        monkeypatch.setattr("dreamcatcher.__main__._detect_platform", lambda: {
+            "os": "darwin", "arch": "arm64", "python": "3.12.0",
+            "mlx": True, "cuda": False,
+            "training_backend": "mlx",
+            "label": "macOS Apple Silicon (MLX available)",
+        })
+
+        # Skip deps (already installed), skip key, no integrations, YES to sample
+        confirm_answers = iter([False, True])  # no integrations, yes sample
+        monkeypatch.setattr("dreamcatcher.__main__._confirm", lambda *a, **k: next(confirm_answers, False))
+        monkeypatch.setattr("dreamcatcher.__main__._prompt", lambda *a, **k: "")
+
+        cmd_quickstart(cfg)
+        out = capsys.readouterr().out
+
+        assert "Ingested sample session" in out
+
+        db = MemoryDB(cfg.db_path)
         sessions = db.get_unprocessed_sessions()
         assert len(sessions) == 1
         assert "Horizon" in sessions[0]["raw_transcript"]
