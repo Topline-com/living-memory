@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-07
+
+### Added
+- **Team Memory** — Shared memory pools for AI agent teams. Each team gets an isolated SQLite database, nightly training cycle, and fine-tuned model at `data/teams/{team_id}/`.
+- **`TeamMemoryManager`** (`dreamcatcher/teams.py`) — Manages per-team databases, collectors, and configs with validated team IDs.
+- **`DreamcatcherConfig.for_team()`** — Factory method that returns a config copy with all paths scoped to a team directory.
+- **7 new team API endpoints** — `/teams/{id}/ingest`, `/teams/{id}/recall`, `/teams/{id}/context`, `/teams/{id}/memories`, `/teams/{id}/stats`, `/teams/{id}/health`, and `/teams` listing.
+- **Team CLI commands** — `dreamcatcher team list`, `dreamcatcher team stats <id>`, `dreamcatcher team nightly [<id>]`.
+- **Team client methods** — `team_save_session()`, `team_recall()`, `team_get_context()`, `team_get_memories()` on the `LivingMemory` client class.
+- **Paperclip integration** (`integrations/paperclip/`) — TypeScript plugin for Paperclip AI that maps `companyId` to Living Memory `team_id`. Registers 3 agent tools (`recall_team_memory`, `save_to_team_memory`, `team_memory_status`), auto-ingests transcripts on `agent.run.completed`, and schedules nightly training triggers.
+- **13 new tests** in `test_teams.py` covering team isolation, cross-agent sharing, config scoping, and collector wiring.
+
+### Fixed
+- **OpenRouter default broke fresh installs** — Reverted default extraction provider to Anthropic. OpenRouter now documented as opt-in with `OPENROUTER_API_KEY`.
+- **`lstrip('./')` mangled parent paths** — Replaced with proper `Path` resolution that preserves `../` semantics in config paths.
+- **Empty extractions retried forever** — Extraction failures (`None`) now distinguished from successful-empty results (`[]`); boring sessions marked done.
+- **`INSERT OR REPLACE` overwrote provenance** — Changed to `INSERT OR IGNORE` + `UPDATE` for memories; added `last_seen_at` column with migration.
+- **`all_memories.extend(None)` crash** — Moved `None` check before `extend()` in collector extraction loop.
+- **Unauthenticated API exposure** — Server now binds to `127.0.0.1` by default instead of `0.0.0.0`.
+- **Superseded memories leaked into training** — Training set now filters out examples whose source memories are all inactive.
+- **`/context` dumped all memories** — Replaced unfiltered `get_active_memories(limit=50)` with query-scoped `_search_db()`.
+- **Paths with spaces broke setup** — Quoted `project_dir` in bash `-c` command for Claude Code setup.
+- **`trust_remote_code=True` unpinned** — Gated on known model families in trainer; removed from local inference in server.
+
+### Changed
+- Nightly pipeline (`dreamcatcher nightly`) now auto-runs for all teams after the personal pipeline.
+
 ## [0.2.1] - 2026-04-06
 
 ### Fixed

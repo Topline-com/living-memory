@@ -18,12 +18,13 @@ Architecture:
   → Inference Server → Agent Integration
   → Browsable Knowledge Vault (Obsidian-compatible)
 """
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 from .config import DreamcatcherConfig
 from .database import MemoryDB
 from .collector import SessionCollector, TrainingDataBuilder
 from .trainer import MemoryTrainer
+from .teams import TeamMemoryManager
 from .wiki import WikiExporter
 from .lint import MemoryLinter
 
@@ -33,6 +34,7 @@ __all__ = [
     "SessionCollector",
     "TrainingDataBuilder",
     "MemoryTrainer",
+    "TeamMemoryManager",
     "WikiExporter",
     "MemoryLinter",
 ]
