@@ -1177,7 +1177,8 @@ def cmd_update(config):
             if uv_bin:
                 print(f"  pip not available, trying uv...")
                 result = subprocess.run(
-                    [uv_bin, "pip", "install", "--upgrade", "dreamcatcher-memory"],
+                    [uv_bin, "pip", "install", "--upgrade", "--python", sys.executable,
+                     "dreamcatcher-memory"],
                     capture_output=True, text=True,
                 )
                 if result.returncode == 0:
