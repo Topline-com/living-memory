@@ -266,7 +266,7 @@ python -m mlx_lm.lora \
   --model google/gemma-4-E2B-it \
   --train \
   --data ./data/training \
-  --batch-size 4 \
+  --batch-size 1 \
   --iters 500 \
   --learning-rate 2e-5 \
   --fine-tune-type full \

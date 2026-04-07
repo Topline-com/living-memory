@@ -20,7 +20,7 @@ model:
 # Training: full re-fine-tuning every night on the COMPLETE rendered set
 training:
   epochs: 3
-  batch_size: 4
+  batch_size: 1
   gradient_accumulation_steps: 4
   learning_rate: 5.0e-6  # Conservative for Gemma 4 E2B (~2.3B). Increase to 2e-5 for Qwen3.5-0.8B.
   warmup_ratio: 0.1
@@ -36,9 +36,11 @@ training:
   max_pair_index_old: 1      # Keep pair_index 0-1 (semantic + contextual) for old facts
 
 # Memory extraction (uses frontier LLM API — the one cloud touchpoint)
+# Switch models by changing `model` — OpenRouter lets you use any provider.
+# Requires OPENROUTER_API_KEY in environment or .env file.
 extraction:
-  provider: "anthropic"  # or "openai"
-  model: "claude-sonnet-4-20250514"
+  provider: "openrouter"  # "openrouter" | "anthropic" | "openai"
+  model: "minimax/minimax-m2.7"  # any OpenRouter model slug works here
 
 # Deduplication
 dedup:

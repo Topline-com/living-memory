@@ -192,6 +192,7 @@ class MemoryTrainer:
             steps_per_save=num_iters + 1,  # Don't save intermediate checkpoints
             max_seq_length=self.config.model.max_seq_length,
             grad_checkpoint=True,  # Critical for fitting 2.3B in 24GB
+            grad_accumulation_steps=tc.gradient_accumulation_steps,
         )
 
         # ── Create optimizer ──────────────────────────────────────
