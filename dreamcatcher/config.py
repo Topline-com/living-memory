@@ -64,6 +64,8 @@ class DreamcatcherConfig:
                 config_path_obj = Path(__file__).parent.parent / config_path
         path = config_path_obj
         raw = yaml.safe_load(open(path)) if path.exists() else {}
+        if raw is None:
+            raw = {}  # yaml.safe_load returns None for empty/comment-only files
         # Anchor for resolving relative data paths: directory containing config.yaml.
         # If no config.yaml found, use ~/.dreamcatcher/ as the user data root
         # (not the package dir, which may be inside site-packages).
