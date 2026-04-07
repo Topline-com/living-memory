@@ -258,8 +258,10 @@ export async function setup(ctx: PluginContext): Promise<void> {
   ctx.jobs.register({
     key: JOB_NIGHTLY,
     schedule: "0 3 * * *", // 3 AM daily
-    handle: async (jobCtx: { scope: [string, string] }) => {
-      const companyId = jobCtx.scope[1];
+    handle: async (jobCtx: unknown) => {
+      const scope = (jobCtx as { scope?: [string, string] })?.scope;
+      const companyId = scope?.[1];
+      if (!companyId) return;
       try {
         // Use team-scoped trigger so each company only retrains its own memory
         await client.triggerTeamNightly(companyId);

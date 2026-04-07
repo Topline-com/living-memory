@@ -352,6 +352,36 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
     _nightly_lock = threading.Lock()
     _team_nightly_locks: dict[str, threading.Lock] = {}
 
+    def _get_team_lock(tid: str) -> threading.Lock:
+        if tid not in _team_nightly_locks:
+            _team_nightly_locks[tid] = threading.Lock()
+        return _team_nightly_locks[tid]
+
+    def _run_team_nightly(tid: str):
+        """Run nightly pipeline for one team. Acquires per-team lock.
+        Used by both /nightly (global) and /teams/{id}/nightly (direct)."""
+        import asyncio as _aio
+        from .collector import SessionCollector as _SC, TrainingDataBuilder as _TDB
+        from .trainer import MemoryTrainer as _MT
+
+        lock = _get_team_lock(tid)
+        if not lock.acquire(blocking=False):
+            print(f"  Team {tid} nightly already running, skipping")
+            return
+        try:
+            tcfg = _teams.get_config(tid)
+            tcfg.ensure_dirs()
+            tc = _SC(tcfg)
+            _aio.run(tc.extract_memories())
+            tb = _TDB(tcfg)
+            if tb.build_training_set():
+                _MT(tcfg).train()
+                _team_models.pop(tid, None)
+        except Exception as e:
+            print(f"  Team nightly error ({tid}): {e}")
+        finally:
+            lock.release()
+
     @app.post("/nightly")
     async def trigger_nightly():
         """Trigger the full nightly pipeline via HTTP. Returns immediately."""
@@ -371,19 +401,10 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
                 data = builder.build_training_set()
                 if data:
                     _MT(config).train()
-                    # Reload the personal model so live recall reflects new training
                     _load_model(config)
-                # Team pipelines
+                # Team pipelines — each acquires its own lock
                 for tid in _teams.list_teams():
-                    tcfg = _teams.get_config(tid)
-                    tcfg.ensure_dirs()
-                    tc = _SC(tcfg)
-                    _aio.run(tc.extract_memories())
-                    tb = _TDB(tcfg)
-                    if tb.build_training_set():
-                        _MT(tcfg).train()
-                        # Invalidate cached team model so next request reloads
-                        _team_models.pop(tid, None)
+                    _run_team_nightly(tid)
             except Exception as e:
                 print(f"  Nightly pipeline error: {e}")
             finally:
@@ -395,12 +416,12 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
     @app.post("/teams/{team_id}/nightly")
     async def trigger_team_nightly(team_id: str):
         """Trigger nightly pipeline for a specific team. Returns immediately."""
-        if team_id not in _team_nightly_locks:
-            _team_nightly_locks[team_id] = threading.Lock()
-        if not _team_nightly_locks[team_id].acquire(blocking=False):
+        lock = _get_team_lock(team_id)
+        if not lock.acquire(blocking=False):
             return {"team_id": team_id, "status": "already_running"}
+        # Lock is held — pass to background thread which will release it
 
-        def _run_team():
+        def _run():
             try:
                 import asyncio as _aio
                 from .collector import SessionCollector as _SC, TrainingDataBuilder as _TDB
@@ -412,14 +433,13 @@ def create_app(config: DreamcatcherConfig = None) -> "FastAPI":
                 tb = _TDB(tcfg)
                 if tb.build_training_set():
                     _MT(tcfg).train()
-                    # Invalidate cached team model so next request reloads
                     _team_models.pop(team_id, None)
             except Exception as e:
                 print(f"  Team nightly error ({team_id}): {e}")
             finally:
-                _team_nightly_locks[team_id].release()
+                lock.release()
 
-        threading.Thread(target=_run_team, daemon=True).start()
+        threading.Thread(target=_run, daemon=True).start()
         return {"team_id": team_id, "status": "started"}
 
     # ── Team-scoped endpoints ──────────────────────────────────
