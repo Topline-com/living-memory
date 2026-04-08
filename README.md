@@ -371,7 +371,7 @@ Your `ANTHROPIC_API_KEY` isn't reaching the process. The CLI auto-loads `.env` v
 Your `mlx-lm` version is too old. Gemma 4 support was added after v0.31.1. Install from main: `pip install git+https://github.com/ml-explore/mlx-lm.git`. Once mlx-lm >=0.31.2 ships on PyPI, `pip install --upgrade mlx-lm` will work.
 
 **Training runs but loss shows 0.0000**
-The MLX Python training API doesn't return loss directly. The actual training loss is printed to the console during training (look for the per-step loss reports). The 0.0 in the summary is a logging limitation, not an actual zero loss.
+The MLX backend now captures training loss via mlx-lm's `training_callback` interface. If you still see `0.0000`, your mlx-lm version may predate the callback API — upgrade with `pip install --upgrade mlx-lm` (or install from main).
 
 **`ModuleNotFoundError: No module named 'dreamcatcher'` (especially with MCP / Claude Code)**
 This happens when the package was installed in editable mode (`pip install -e .`) and your Python was installed via uv. Python 3.12's `site` module skips `.pth` files whose names start with `_`, which breaks setuptools editable installs. The module works from the project directory but fails from anywhere else (which is how the MCP server runs). Fix: reinstall in non-editable mode: `pip install .`
