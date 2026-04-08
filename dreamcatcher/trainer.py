@@ -208,14 +208,25 @@ class MemoryTrainer:
         print(f"  Training with MLX (full fine-tune, {tc.epochs} epochs, {num_iters} iters)...")
 
         # ── Run training ──────────────────────────────────────────
+        class _LossCapture:
+            """Capture final training loss from mlx-lm's callback interface."""
+            def __init__(self):
+                self.final_loss = 0.0
+            def on_train_loss_report(self, info: dict):
+                self.final_loss = info.get("train_loss", 0.0)
+            def on_val_loss_report(self, info: dict):
+                pass  # No validation split used
+
         try:
+            loss_capture = _LossCapture()
             mlx_train(
                 model=model,
                 optimizer=optimizer,
                 args=training_args,
                 train_dataset=str(train_file),
+                training_callback=loss_capture,
             )
-            loss_final = 0.0  # mlx_train doesn't return loss directly; we log from console
+            loss_final = loss_capture.final_loss
         except Exception as e:
             print(f"  MLX training error: {e}")
             # Fallback: try using mlx-lm CLI approach
@@ -412,6 +423,7 @@ class MemoryTrainer:
                     torch_dtype=torch.float16 if self.config.training.fp16 else torch.float32,
                     trust_remote_code=needs_remote_code,
                     device_map="auto",
+                    attn_implementation="sdpa",  # Fused attention; works on all Gemma 4 layers
                 )
                 if tokenizer.pad_token is None:
                     tokenizer.pad_token = tokenizer.eos_token
